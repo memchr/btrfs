@@ -1,4 +1,4 @@
-# btrfs scripts
+# memchr's btrfs scripts
 
 ## snapshot.py
 
