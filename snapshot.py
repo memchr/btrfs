@@ -85,6 +85,7 @@ class _DateTime(click.DateTime):
 
 @cli.command()
 @arg_volume(exists=False)
+@click.argument("snapshots", type=click.STRING, required=False, nargs=-1)
 @click.option(
     "-n",
     "--dry-run",
@@ -94,26 +95,31 @@ class _DateTime(click.DateTime):
 @click.option("-k", "--keep", type=int, help="Number of lastest snapshots to keep")
 @click.option("-b", "--before", type=_DateTime(), help="Delete snapshots before date")
 @click.option("-a", "--all", is_flag=True, help="Delete all snapshots")
-def delete(volume: Path, before: datetime, dry_run: bool, keep: int, all: bool):
+def delete(
+    volume: Path,
+    before: datetime,
+    snapshots: str,
+    dry_run: bool,
+    keep: int,
+    all: bool,
+):
     """Delete snapshots."""
     volume, name = resolve_volume(volume)
     snapshots_path = SNAPSHOT_STORE / name
-    snapshots = sorted(get_snapshots(name, nosnapshots_ok=True))
+    all_snapshots = sorted(get_snapshots(name, nosnapshots_ok=True))
 
-    if not all:
-        filtered = False
-        if keep is not None:
-            filtered = True
-            snapshots = snapshots[:-keep]
-        if before is not None:
-            filtered = True
+    if len(snapshots) == 0:
+        if all:
+            snapshots = all_snapshots
+        elif keep is not None:
+            snapshots = all_snapshots[:-keep]
+        elif before is not None:
             b = before.strftime(DATETIME_FORMAT)
-            snapshots = [s for s in snapshots if s < b]
-        if not filtered:
-            raise click.UsageError(
-                "either restrict deletion with the --keep and --before flags, or use"
-                " --all to explicitly delete all snapshots"
-            )
+            snapshots = [s for s in all_snapshots if s < b]
+    if len(snapshots) == 0:
+        raise click.UsageError(
+            "No snapshots available for deletion. Specify the snapshots to delete using filter options or by their names."
+        )
     if dry_run:
         click.echo("Dry run, no snapshots will be deleted...")
     else:
