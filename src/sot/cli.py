@@ -335,7 +335,7 @@ def delete(
         click.echo(f"Removed snapshots dir for subvolume {name_s}")
 
 
-if __name__ == "__main__":
+def main():
     try:
         cli()
     except FileNotFoundError as e:

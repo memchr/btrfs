@@ -1,0 +1,17 @@
+[project]
+name = "sot"
+version = "0.0.1"
+description = "Btrfs snapshot tool"
+readme = "README.md"
+dependencies = [
+	"click",
+	"btrfsutil"
+]
+requires-python = ">=3.12"
+
+[project.scripts]
+sot = "sot.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
