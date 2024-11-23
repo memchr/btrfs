@@ -55,14 +55,17 @@ class SnapshotStorage:
         self.root = ensure_path(root).resolve()
         self.path = root / ".snapshots"
         self._json = self.path / "index.json"
+        _ = self.metadata
 
     def __div__(self, volume) -> Path:
         return self.path / volume
 
     @property
-    def metadata(self):
+    def metadata(self) -> dict[str, dict[str, float]]:
         with self._json.open("r") as f:
-            return json.load(f)
+            md = json.load(f)
+        self.metadata_cached = md
+        return md
 
     @metadata.setter
     def metadata(self, md):
