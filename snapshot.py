@@ -179,9 +179,9 @@ def create(volume: Volume, name):
     )
 
 
-@cli.command()
+@cli.command(name="list")
 @args.volume(required=False, exists=False)
-def list(volume: Volume):
+def list_(volume: Volume):
     """List all snapshots."""
     if volume is None:
         click.echo("Listing all snapshots...")
