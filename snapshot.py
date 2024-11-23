@@ -1,5 +1,7 @@
 #!/usr/bin/python
 from datetime import date, datetime
+import hashlib
+import os
 from pathlib import Path
 from typing import Any, override
 import btrfsutil
@@ -14,12 +16,130 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
 
-def arg_volume(required=True, exists=True):
-    return click.argument(
-        "volume",
-        type=click.Path(exists=exists, file_okay=False, path_type=Path),
-        required=required,
+def escape(path: str) -> str:
+    return (
+        str(path).strip("/").replace(r"%", r"%%").replace("@", r"%t").replace("/", "@")
     )
+
+
+def unescape(path: str) -> str:
+    return str(path).replace("@", "/").replace("%t", "@").replace(r"%%", "%")
+
+
+def ensure_path(path: os.PathLike):
+    if isinstance(path, Path):
+        return path
+    return Path(path)
+
+
+class NotASubvolume(click.BadParameter):
+    def __init__(self, path: str) -> None:
+        super().__init__(f"'{path}' is not a btrfs subvolume.", param_hint="VOLUME")
+
+
+class SubvolumeNotFound(click.BadParameter):
+    def __init__(self, path: str) -> None:
+        super().__init__(f"Subvolume '{path}' not found.", param_hint="VOLUME")
+
+
+class NoSnapshotsError(click.BadParameter):
+    def __init__(self, name: str) -> None:
+        super().__init__(f"'{name}' does not have snapshots.", param_hint="VOLUME")
+
+
+class Volume:
+    def __init__(self, path: Path = None, name=None, exists=False) -> None:
+        """
+        Relative volume path is interepted as relative path to HOME if it cannot be
+        found in current directory
+        """
+        if name is not None:
+            path = unescape(name)
+        path = ensure_path(path)
+        if not path.is_absolute() and not path.exists():
+            path = ROOT / path
+        path = path.resolve()
+        if exists:
+            if not btrfsutil.is_subvolume(str(path)):
+                raise NotASubvolume(path)
+            if not path.exists():
+                raise SubvolumeNotFound(path)
+        self.path = path
+        self.relative_path = path.relative_to(ROOT)
+        self.name = escape(self.relative_path)
+
+    @property
+    def snapshots_store(self):
+        return SNAPSHOT_STORE / self.name
+
+    @property
+    def snapshots(self) -> list["Snapshot"]:
+        path = self.snapshots_store
+        if not path.exists():
+            return []
+        return [Snapshot(self, s.name) for s in path.iterdir() if s.is_dir()]
+
+
+class Snapshot:
+    def __init__(self, volume: Volume, name) -> None:
+        if name is None:
+            name = self.generate_name()
+        self.name = name
+        self.volume = volume
+        self.path = SNAPSHOT_STORE / self.volume.name / self.name
+
+    def exists(self) -> bool:
+        pass
+
+    def create(self) -> None:
+        self.path.parent.mkdir(exist_ok=True, parents=True)
+        try:
+            btrfsutil.create_snapshot(
+                str(self.volume.path), str(self.path), read_only=True
+            )
+        except BtrfsUtilError as e:
+            raise click.ClickException(e)
+
+    def delete(self) -> None:
+        path = str(self.path)
+        try:
+            btrfsutil.set_subvolume_read_only(path, read_only=False)
+            btrfsutil.delete_subvolume(path)
+        except BtrfsUtilError as e:
+            raise click.ClickException(e)
+        pass
+
+    @staticmethod
+    def generate_name():
+        return hashlib.sha256(os.urandom(16)).hexdigest()[:8]
+
+
+class VolumeParamType(click.ParamType):
+    name = "volume"
+
+    def __init__(self, exists=False) -> None:
+        self.exists = exists
+        super().__init__()
+
+    def convert(
+        self, value: Any, param: click.Parameter | None, ctx: click.Context | None
+    ) -> Any:
+        if isinstance(value, Volume):
+            return value
+        try:
+            return Volume(value, exists=self.exists)
+        except (NotASubvolume, SubvolumeNotFound) as e:
+            self.fail(e, param, ctx)
+
+
+class args:
+    @staticmethod
+    def volume(required=True, exists=True):
+        return click.argument(
+            "volume",
+            type=VolumeParamType(exists=exists),
+            required=required,
+        )
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
@@ -39,36 +159,30 @@ def cli(root: Path):
 
 
 @cli.command()
-@arg_volume()
-def create(volume: Path):
+@args.volume(exists=True)
+@click.argument("name", type=click.STRING, required=False)
+def create(volume: Volume, name):
     """Create new snapshot."""
-    timestamp = datetime.now().strftime(DATETIME_FORMAT)
-    volume, name = resolve_volume(volume, exists=True)
-    snapshots_path = SNAPSHOT_STORE / name
-    snapshots_path.mkdir(exist_ok=True, parents=True)
-
-    create_snapshot(volume, snapshots_path / timestamp)
+    snapshot = Snapshot(volume, name)
+    snapshot.create()
     click.echo(
-        f"Snapshot created as: '{click.style(name, fg="green", bold=True)}/{click.style(timestamp, fg="blue")}'"
+        f"Snapshot '{click.style(volume.name, fg="green", bold=True)}/{click.style(snapshot.name, fg="blue")}' created"
     )
 
 
 @cli.command()
-@arg_volume(required=False, exists=False)
-def list(volume: Path):
+@args.volume(required=False, exists=False)
+def list(volume: Volume):
     """List all snapshots."""
     if volume is None:
         click.echo("Listing all snapshots...")
         volume_snapshots = {
-            unescape(name.relative_to(SNAPSHOT_STORE)): get_snapshots(
-                name, nosnapshots_ok=True
-            )
-            for name in SNAPSHOT_STORE.iterdir()
-            if name.is_dir()
+            (v := Volume(name=d.name)).relative_path: (s.name for s in v.snapshots)
+            for d in SNAPSHOT_STORE.iterdir()
+            if d.is_dir()
         }
     else:
-        volume, name = resolve_volume(volume)
-        volume_snapshots = {unescape(name): get_snapshots(name)}
+        volume_snapshots = {volume.relative_path: (s.name for s in volume.snapshots)}
     for volume, snapshots in volume_snapshots.items():
         click.secho(volume, fg="green", bold=True)
         for snapshot in snapshots:
@@ -84,7 +198,7 @@ class _DateTime(click.DateTime):
 
 
 @cli.command()
-@arg_volume(exists=False)
+@args.volume(exists=False)
 @click.argument("snapshots", type=click.STRING, required=False, nargs=-1)
 @click.option(
     "-n",
@@ -96,7 +210,7 @@ class _DateTime(click.DateTime):
 @click.option("-b", "--before", type=_DateTime(), help="Delete snapshots before date")
 @click.option("-a", "--all", is_flag=True, help="Delete all snapshots")
 def delete(
-    volume: Path,
+    volume: Volume,
     before: datetime,
     snapshots: str,
     dry_run: bool,
@@ -104,18 +218,17 @@ def delete(
     all: bool,
 ):
     """Delete snapshots."""
-    volume, name = resolve_volume(volume)
-    snapshots_path = SNAPSHOT_STORE / name
-    all_snapshots = sorted(get_snapshots(name, nosnapshots_ok=True))
-
     if len(snapshots) == 0:
         if all:
-            snapshots = all_snapshots
+            snapshots = volume.snapshots
         elif keep is not None:
-            snapshots = all_snapshots[:-keep]
+            snapshots = volume.snapshots[:-keep]
         elif before is not None:
+            raise NotImplementedError
             b = before.strftime(DATETIME_FORMAT)
-            snapshots = [s for s in all_snapshots if s < b]
+            snapshots = [name for name in volume.snapshots if name < b]
+    else:
+        snapshots = [Snapshot(volume, name) for name in snapshots]
     if len(snapshots) == 0:
         raise click.UsageError(
             "No snapshots available for deletion. Specify the snapshots to delete using filter options or by their names."
@@ -125,92 +238,17 @@ def delete(
     else:
         click.echo("Deleting snapshots...")
 
-    name_s = click.style(name, fg="green", bold=True)
+    name_s = click.style(volume.relative_path, fg="green", bold=True)
     for s in snapshots:
         if not dry_run:
-            delete_subvolume(snapshots_path / s)
+            pass
+            # delete_subvolume(snapshots_path / s)
         click.echo(f"Deleted snapshot: '{name_s}/{click.style(s, fg="blue")}'")
     if all:
         if not dry_run:
-            snapshots_path.rmdir()
+            pass
+            # snapshots_path.rmdir()
         click.echo(f"Removed snapshots dir for subvolume {name_s}")
-
-
-def get_snapshots(name: str, nosnapshots_ok=False):
-    snapshots_path = SNAPSHOT_STORE / name
-    if not snapshots_path.exists():
-        raise SubvolumeNotFound(unescape(name))
-
-    snapshots = [s.name for s in snapshots_path.iterdir() if s.is_dir()]
-    if not nosnapshots_ok and len(snapshots) == 0:
-        raise NoSnapshotsError(unescape(name))
-
-    return snapshots
-
-
-def resolve_volume(volume: Path, exists=False) -> tuple[Path, str]:
-    """Resolve volume
-    Relative volume path is interepted as relative path to HOME if it cannot be
-    found in current directory
-
-    Args:
-        exists: check that the resolved path exists and is a btrfs subvolume
-
-    Returns:
-        absolute path of volume and its escaped name
-    """
-
-    if not volume.is_absolute() and not volume.exists():
-        volume = ROOT / volume
-    volume = volume.resolve()
-    if exists:
-        if not volume.exists():
-            raise SubvolumeNotFound(volume)
-        if not btrfsutil.is_subvolume(str(volume)):
-            raise NotASubvolume(volume)
-
-    return volume, escape(volume.relative_to(ROOT))
-
-
-class NotASubvolume(click.BadParameter):
-    def __init__(self, path: str) -> None:
-        super().__init__(f"'{path}' is not a btrfs subvolume.", param_hint="VOLUME")
-
-
-class SubvolumeNotFound(click.BadParameter):
-    def __init__(self, path: str) -> None:
-        super().__init__(f"Subvolume '{path}' not found.", param_hint="VOLUME")
-
-
-class NoSnapshotsError(click.BadParameter):
-    def __init__(self, name: str) -> None:
-        super().__init__(f"'{name}' does not have snapshots.", param_hint="VOLUME")
-
-
-def create_snapshot(src: str, dst: str):
-    try:
-        btrfsutil.create_snapshot(str(src), str(dst), read_only=True)
-    except BtrfsUtilError as e:
-        raise click.ClickException(e)
-
-
-def delete_subvolume(src: str):
-    src = str(src)
-    try:
-        btrfsutil.set_subvolume_read_only(src, read_only=False)
-        btrfsutil.delete_subvolume(src)
-    except BtrfsUtilError as e:
-        raise click.ClickException(e)
-
-
-def escape(path: str) -> str:
-    return (
-        str(path).strip("/").replace(r"%", r"%%").replace("@", r"%t").replace("/", "@")
-    )
-
-
-def unescape(path: str) -> str:
-    return str(path).replace("@", "/").replace("%t", "@").replace(r"%%", "%")
 
 
 if __name__ == "__main__":
