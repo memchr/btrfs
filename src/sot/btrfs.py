@@ -7,10 +7,13 @@ import time
 import btrfsutil
 import json
 
-from sot.config import SNAPSHOT_DIR
 from sot.utils import ensure_path, escape, unescape
 
-DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
+
+class config:
+    STORAGE: "SnapshotStorage" = None
+    DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
+    SNAPSHOT_DIR = ".sot"
 
 
 class NotASubvolume(ValueError):
@@ -38,7 +41,7 @@ class SnapshotStorage:
 
     def __init__(self, root: Path) -> None:
         self.root = ensure_path(root).resolve()
-        self.path = root / SNAPSHOT_DIR
+        self.path = root / config.SNAPSHOT_DIR
         self._json = self.path / "index.json"
         # silly, but not as much as _ = self.metadata
         self._metadata_cached = self._metadata
@@ -111,18 +114,16 @@ class SnapshotStorage:
 
 
 class Volume:
-    storage: SnapshotStorage
-
     def __init__(self, path: Path = None, name=None, exists=False) -> None:
         """
         Relative volume path is interepted as relative path to SubvolumeStorage
         if it cannot be found in current directory
         """
         path = ensure_path(path if name is None else unescape(name))
-        self.path = path.resolve() if path.exists() else self.storage.root / path
-        self.relative_path = self.path.relative_to(self.storage.root)
+        self.path = path.resolve() if path.exists() else config.STORAGE.root / path
+        self.relative_path = self.path.relative_to(config.STORAGE.root)
         self.name = escape(self.relative_path)
-        self.snapshots_path = self.storage.path / self.name
+        self.snapshots_path = config.STORAGE.path / self.name
 
         if exists:
             self.assert_is_volume()
@@ -139,7 +140,7 @@ class Volume:
         path = self.snapshots_path
         if not path.exists():
             return []
-        return self.storage.query(self)
+        return config.STORAGE.query(self)
 
 
 class Snapshot:
@@ -158,18 +159,18 @@ class Snapshot:
             raise SnapshotExists(self.name)
         self.path.parent.mkdir(exist_ok=True, parents=True)
         btrfsutil.create_snapshot(str(self.volume.path), str(self.path), read_only=True)
-        self.volume.storage.register(self)
+        config.STORAGE.register(self)
 
     def delete(self) -> None:
         path = str(self.path)
         btrfsutil.set_subvolume_read_only(path, read_only=False)
         btrfsutil.delete_subvolume(path)
-        self.volume.storage.unregister(self)
+        config.STORAGE.unregister(self)
         pass
 
     @property
     def strtime(self):
-        return datetime.fromtimestamp(self.time).strftime(DATETIME_FORMAT)
+        return datetime.fromtimestamp(self.time).strftime(config.DATETIME_FORMAT)
 
     @staticmethod
     def generate_name():

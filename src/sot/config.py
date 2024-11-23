@@ -1,1 +1,0 @@
-SNAPSHOT_DIR = ".sot"

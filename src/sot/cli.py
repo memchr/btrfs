@@ -13,6 +13,7 @@ from sot.btrfs import (
     SnapshotStorage,
     SubvolumeNotFound,
     Volume,
+    config,
 )
 
 
@@ -56,7 +57,12 @@ class args:
 )
 def cli(root: Path):
     """BTRFS snapshots management."""
-    Volume.storage = SnapshotStorage(root if root is not None else Path.home())
+    config.STORAGE = SnapshotStorage(root if root is not None else Path.home())
+
+
+@cli.command()
+def init():
+    """Initialize snapshot storage"""
 
 
 @cli.command()
@@ -81,7 +87,7 @@ def list_(volume: Volume):
         click.echo("Listing all snapshots...")
         volumes_snapshots = {
             (v := Volume(name=d.name)).relative_path: v.snapshots
-            for d in Volume.storage.iter()
+            for d in config.STORAGE.iter()
         }
     else:
         volumes_snapshots = {volume.relative_path: volume.snapshots}
