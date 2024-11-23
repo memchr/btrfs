@@ -93,12 +93,14 @@ class Snapshot:
 
         self.name = name
         self.volume = volume
-        self.path = SNAPSHOT_STORE / self.volume.name / self.name
+        self.path = self.volume.snapshots_store / self.name
 
     def exists(self) -> bool:
         pass
 
     def create(self) -> None:
+        if self.path.exists():
+            raise SnapshotExists(self.name)
         self.path.parent.mkdir(exist_ok=True, parents=True)
         try:
             btrfsutil.create_snapshot(
