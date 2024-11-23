@@ -185,14 +185,14 @@ def list(volume: Volume):
     """List all snapshots."""
     if volume is None:
         click.echo("Listing all snapshots...")
-        volume_snapshots = {
+        volumes_snapshots = {
             (v := Volume(name=d.name)).relative_path: (s.name for s in v.snapshots)
             for d in SNAPSHOT_STORE.iterdir()
             if d.is_dir()
         }
     else:
-        volume_snapshots = {volume.relative_path: (s.name for s in volume.snapshots)}
-    for volume, snapshots in volume_snapshots.items():
+        volumes_snapshots = {volume.relative_path: (s.name for s in volume.snapshots)}
+    for volume, snapshots in volumes_snapshots.items():
         click.secho(volume, fg="green", bold=True)
         for snapshot in snapshots:
             click.secho(f"  {snapshot}", fg="blue")
