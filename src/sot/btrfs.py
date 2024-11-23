@@ -85,9 +85,9 @@ class SnapshotStorage:
             volume = obj.volume
 
             if volume.name in md:
-                md[volume.name][obj.name] = time.time()
+                md[volume.name][obj.name] = obj.time
             else:
-                md[volume.name] = {obj.name: time.time()}
+                md[volume.name] = {obj.name: obj.time}
             self._metadata = md
         elif isinstance(obj, Volume):
             raise NotImplementedError

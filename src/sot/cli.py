@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 import shutil
+import time
 from typing import Any, override
 from btrfsutil import BtrfsUtilError
 import click
@@ -70,7 +71,7 @@ def init():
 @click.argument("name", type=click.STRING, required=False)
 def create(volume: Volume, name):
     """Create new snapshot."""
-    snapshot = Snapshot(volume, name)
+    snapshot = Snapshot(volume, name, time=time.time())
     snapshot.create()
     click.echo(
         f"Snapshot '{click.style(volume.name, fg="green", bold=True)}/{click.style(snapshot.name, fg="blue")}' created"
