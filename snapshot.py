@@ -155,6 +155,8 @@ class Snapshot:
             self.volume.storage.metadata_delete(self)
         except BtrfsUtilError as e:
             raise click.ClickException(e)
+        except KeyError as e:
+            raise Warning(f"Warning: snapshot metadata desync: {e}")
         pass
 
     @staticmethod
@@ -285,7 +287,10 @@ def delete(
     name_s = click.style(volume.relative_path, fg="green", bold=True)
     for s in snapshots:
         if not dry_run:
-            s.delete()
+            try:
+                s.delete()
+            except Warning as e:
+                click.echo(e, err=True)
             # delete_subvolume(snapshots_path / s)
         click.echo(f"Deleted snapshot: '{name_s}/{click.style(s.name, fg="blue")}'")
     if all:
