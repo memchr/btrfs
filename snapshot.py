@@ -3,8 +3,9 @@ from datetime import date, datetime
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import time
-from typing import Any, Self, override
+from typing import Any, override
 import btrfsutil
 from btrfsutil import BtrfsUtilError
 import click
@@ -51,33 +52,43 @@ class NoSnapshotsError(click.BadParameter):
 
 
 class SnapshotStorage:
+    MetadataType = dict[str, dict[str, float]]
+
     def __init__(self, root: Path) -> None:
         self.root = ensure_path(root).resolve()
         self.path = root / ".snapshots"
         self._json = self.path / "index.json"
-        _ = self.metadata
+        # silly, but not as much as _ = self.metadata
+        self.metadata_cached = self.metadata
 
     def __div__(self, volume) -> Path:
         return self.path / volume
 
     @property
-    def metadata(self) -> dict[str, dict[str, float]]:
+    def metadata(self) -> MetadataType:
+        """ """
         with self._json.open("r") as f:
             md = json.load(f)
         self.metadata_cached = md
         return md
 
     @metadata.setter
-    def metadata(self, md):
+    def metadata(self, md: MetadataType):
         with self._json.open("w") as f:
-            json.dump(md, f)
+            json.dump(
+                {
+                    k: dict(sorted(v.items(), key=lambda x: -x[1]))
+                    for k, v in md.items()
+                },
+                f,
+            )
 
-    def metadata_delete(self, snapshot: "Snapshot"):
+    def snapshot_delete(self, snapshot: "Snapshot"):
         md = self.metadata
         del md[snapshot.volume.name][snapshot.name]
         self.metadata = md
 
-    def metadata_insert(self, snapshot: "Snapshot"):
+    def snapshot_insert(self, snapshot: "Snapshot"):
         md = self.metadata if self._json.exists() else {}
         volume = snapshot.volume
 
@@ -122,11 +133,14 @@ class Volume:
         path = self.snapshots_path
         if not path.exists():
             return []
-        return [Snapshot(self, s.name) for s in path.iterdir() if s.is_dir()]
+        return [
+            Snapshot(self, name, time)
+            for name, time in self.storage.metadata_cached[self.name].items()
+        ]
 
 
 class Snapshot:
-    def __init__(self, volume: Volume, name: str) -> None:
+    def __init__(self, volume: Volume, name: str, time: float = 0) -> None:
         if name is None:
             while (volume.snapshots_path / (name := self.generate_name())).exists():
                 pass
@@ -134,6 +148,7 @@ class Snapshot:
         self.name = name
         self.volume = volume
         self.path = self.volume.snapshots_path / self.name
+        self.time = time
 
     def create(self) -> None:
         if self.path.exists():
@@ -143,7 +158,7 @@ class Snapshot:
             btrfsutil.create_snapshot(
                 str(self.volume.path), str(self.path), read_only=True
             )
-            self.volume.storage.metadata_insert(self)
+            self.volume.storage.snapshot_insert(self)
         except BtrfsUtilError as e:
             raise click.ClickException(e)
 
@@ -152,12 +167,16 @@ class Snapshot:
         try:
             btrfsutil.set_subvolume_read_only(path, read_only=False)
             btrfsutil.delete_subvolume(path)
-            self.volume.storage.metadata_delete(self)
+            self.volume.storage.snapshot_delete(self)
         except BtrfsUtilError as e:
             raise click.ClickException(e)
         except KeyError as e:
             raise Warning(f"Warning: snapshot metadata desync: {e}")
         pass
+
+    @property
+    def strtime(self):
+        return datetime.fromtimestamp(self.time).strftime(DATETIME_FORMAT)
 
     @staticmethod
     def generate_name():
@@ -225,16 +244,19 @@ def list_(volume: Volume):
     if volume is None:
         click.echo("Listing all snapshots...")
         volumes_snapshots = {
-            (v := Volume(name=d.name)).relative_path: (s for s in v.snapshots)
+            (v := Volume(name=d.name)).relative_path: v.snapshots
             for d in Volume.storage.iter()
         }
     else:
-        volumes_snapshots = {volume.relative_path: (s for s in volume.snapshots)}
+        volumes_snapshots = {volume.relative_path: volume.snapshots}
 
+    leftpad = min(shutil.get_terminal_size().columns - 16, 60)
     for volume, snapshots in volumes_snapshots.items():
         click.secho(volume, fg="green", bold=True)
         for snapshot in snapshots:
-            click.secho(f"  {snapshot.name}", fg="blue")
+            click.echo(
+                f"  {click.style(snapshot.name, fg="yellow"):<{leftpad}} {snapshot.strtime}"
+            )
 
 
 class _DateTime(click.DateTime):
