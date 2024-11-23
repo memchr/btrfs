@@ -221,7 +221,7 @@ class _DateTime(click.DateTime):
 def delete(
     volume: Volume,
     before: datetime,
-    snapshots: str,
+    snapshots: list[Snapshot],
     dry_run: bool,
     keep: int,
     all: bool,
@@ -234,14 +234,12 @@ def delete(
             snapshots = volume.snapshots[:-keep]
         elif before is not None:
             raise NotImplementedError
-            b = before.strftime(DATETIME_FORMAT)
-            snapshots = [name for name in volume.snapshots if name < b]
+            # b = before.strftime(DATETIME_FORMAT)
+            # snapshots = [name for name in volume.snapshots if name < b]
+        if len(snapshots) == 0:
+            raise click.UsageError("No snapshots available for deletion.")
     else:
         snapshots = [Snapshot(volume, name) for name in snapshots]
-    if len(snapshots) == 0:
-        raise click.UsageError(
-            "No snapshots available for deletion. Specify the snapshots to delete using filter options or by their names."
-        )
     if dry_run:
         click.echo("Dry run, no snapshots will be deleted...")
     else:
@@ -250,13 +248,12 @@ def delete(
     name_s = click.style(volume.relative_path, fg="green", bold=True)
     for s in snapshots:
         if not dry_run:
-            pass
+            s.delete()
             # delete_subvolume(snapshots_path / s)
-        click.echo(f"Deleted snapshot: '{name_s}/{click.style(s, fg="blue")}'")
+        click.echo(f"Deleted snapshot: '{name_s}/{click.style(s.name, fg="blue")}'")
     if all:
         if not dry_run:
-            pass
-            # snapshots_path.rmdir()
+            volume.snapshots_store.rmdir()
         click.echo(f"Removed snapshots dir for subvolume {name_s}")
 
 
