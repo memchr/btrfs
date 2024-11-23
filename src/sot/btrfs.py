@@ -7,6 +7,7 @@ import time
 import btrfsutil
 import json
 
+from sot.config import SNAPSHOT_DIR
 from sot.utils import ensure_path, escape, unescape
 
 DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
@@ -37,7 +38,7 @@ class SnapshotStorage:
 
     def __init__(self, root: Path) -> None:
         self.root = ensure_path(root).resolve()
-        self.path = root / ".snapshots"
+        self.path = root / SNAPSHOT_DIR
         self._json = self.path / "index.json"
         # silly, but not as much as _ = self.metadata
         self._metadata_cached = self._metadata
