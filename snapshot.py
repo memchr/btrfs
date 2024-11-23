@@ -3,14 +3,12 @@ from datetime import date, datetime
 import hashlib
 import os
 from pathlib import Path
-from typing import Any, override
+import time
+from typing import Any, Self, override
 import btrfsutil
 from btrfsutil import BtrfsUtilError
 import click
-
-HOME = Path.home()
-ROOT = HOME
-SNAPSHOT_STORE = ROOT / ".snapshots"
+import json
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
@@ -52,34 +50,73 @@ class NoSnapshotsError(click.BadParameter):
         super().__init__(f"'{name}' does not have snapshots.", param_hint="VOLUME")
 
 
-class Volume:
-    def __init__(self, path: Path = None, name=None, exists=False) -> None:
-        """
-        Relative volume path is interepted as relative path to HOME if it cannot be
-        found in current directory
-        """
-        if name is not None:
-            path = unescape(name)
-        path = ensure_path(path)
-        if not path.is_absolute() and not path.exists():
-            path = ROOT / path
-        path = path.resolve()
-        if exists:
-            if not btrfsutil.is_subvolume(str(path)):
-                raise NotASubvolume(path)
-            if not path.exists():
-                raise SubvolumeNotFound(path)
-        self.path = path
-        self.relative_path = path.relative_to(ROOT)
-        self.name = escape(self.relative_path)
+class SnapshotStorage:
+    def __init__(self, root: Path) -> None:
+        self.root = ensure_path(root).resolve()
+        self.path = root / ".snapshots"
+        self._json = self.path / "index.json"
+
+    def __div__(self, volume) -> Path:
+        return self.path / volume
 
     @property
-    def snapshots_store(self):
-        return SNAPSHOT_STORE / self.name
+    def metadata(self):
+        with self._json.open("r") as f:
+            return json.load(f)
+
+    @metadata.setter
+    def metadata(self, md):
+        with self._json.open("w") as f:
+            json.dump(md, f)
+
+    def metadata_delete(self, snapshot: "Snapshot"):
+        md = self.metadata
+        del md[snapshot.volume.name][snapshot.name]
+        self.metadata = md
+
+    def metadata_insert(self, snapshot: "Snapshot"):
+        md = self.metadata if self._json.exists() else {}
+        volume = snapshot.volume
+
+        if volume.name in md:
+            md[volume.name][snapshot.name] = time.time()
+        else:
+            md[volume.name] = {snapshot.name: time.time()}
+        self.metadata = md
+
+    def iter(self):
+        for d in self.path.iterdir():
+            if d.is_dir():
+                yield d
+
+
+class Volume:
+    storage: SnapshotStorage
+
+    def __init__(self, path: Path = None, name=None, exists=False) -> None:
+        """
+        Relative volume path is interepted as relative path to SubvolumeStorage
+        if it cannot be found in current directory
+        """
+        path = ensure_path(path if name is None else unescape(name))
+        self.path = path.resolve() if path.exists() else self.storage.root / path
+        self.relative_path = self.path.relative_to(self.storage.root)
+        self.name = escape(self.relative_path)
+        self.snapshots_path = self.storage.path / self.name
+
+        if exists:
+            self.assert_is_volume()
+
+    def assert_is_volume(self):
+        path = self.path
+        if not btrfsutil.is_subvolume(str(path)):
+            raise NotASubvolume(path)
+        if not path.exists():
+            raise SubvolumeNotFound(path)
 
     @property
     def snapshots(self) -> list["Snapshot"]:
-        path = self.snapshots_store
+        path = self.snapshots_path
         if not path.exists():
             return []
         return [Snapshot(self, s.name) for s in path.iterdir() if s.is_dir()]
@@ -88,15 +125,12 @@ class Volume:
 class Snapshot:
     def __init__(self, volume: Volume, name: str) -> None:
         if name is None:
-            while (volume.snapshots_store / (name := self.generate_name())).exists():
+            while (volume.snapshots_path / (name := self.generate_name())).exists():
                 pass
 
         self.name = name
         self.volume = volume
-        self.path = self.volume.snapshots_store / self.name
-
-    def exists(self) -> bool:
-        pass
+        self.path = self.volume.snapshots_path / self.name
 
     def create(self) -> None:
         if self.path.exists():
@@ -106,6 +140,7 @@ class Snapshot:
             btrfsutil.create_snapshot(
                 str(self.volume.path), str(self.path), read_only=True
             )
+            self.volume.storage.metadata_insert(self)
         except BtrfsUtilError as e:
             raise click.ClickException(e)
 
@@ -114,6 +149,7 @@ class Snapshot:
         try:
             btrfsutil.set_subvolume_read_only(path, read_only=False)
             btrfsutil.delete_subvolume(path)
+            self.volume.storage.metadata_delete(self)
         except BtrfsUtilError as e:
             raise click.ClickException(e)
         pass
@@ -160,11 +196,7 @@ class args:
 )
 def cli(root: Path):
     """BTRFS snapshots management."""
-    if root is not None:
-        global ROOT
-        global SNAPSHOT_STORE
-        ROOT = root.resolve()
-        SNAPSHOT_STORE = ROOT / ".snapshots"
+    Volume.storage = SnapshotStorage(root if root is not None else Path.home())
 
 
 @cli.command()
@@ -183,19 +215,21 @@ def create(volume: Volume, name):
 @args.volume(required=False, exists=False)
 def list_(volume: Volume):
     """List all snapshots."""
+    volumes_snapshots: dict[Volume, list[Snapshot]]
+
     if volume is None:
         click.echo("Listing all snapshots...")
         volumes_snapshots = {
-            (v := Volume(name=d.name)).relative_path: (s.name for s in v.snapshots)
-            for d in SNAPSHOT_STORE.iterdir()
-            if d.is_dir()
+            (v := Volume(name=d.name)).relative_path: (s for s in v.snapshots)
+            for d in Volume.storage.iter()
         }
     else:
-        volumes_snapshots = {volume.relative_path: (s.name for s in volume.snapshots)}
+        volumes_snapshots = {volume.relative_path: (s for s in volume.snapshots)}
+
     for volume, snapshots in volumes_snapshots.items():
         click.secho(volume, fg="green", bold=True)
         for snapshot in snapshots:
-            click.secho(f"  {snapshot}", fg="blue")
+            click.secho(f"  {snapshot.name}", fg="blue")
 
 
 class _DateTime(click.DateTime):
@@ -253,7 +287,7 @@ def delete(
         click.echo(f"Deleted snapshot: '{name_s}/{click.style(s.name, fg="blue")}'")
     if all:
         if not dry_run:
-            volume.snapshots_store.rmdir()
+            volume.snapshots_path.rmdir()
         click.echo(f"Removed snapshots dir for subvolume {name_s}")
 
 
