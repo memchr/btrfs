@@ -42,6 +42,11 @@ class SubvolumeNotFound(click.BadParameter):
         super().__init__(f"Subvolume '{path}' not found.", param_hint="VOLUME")
 
 
+class SnapshotExists(click.BadParameter):
+    def __init__(self, name: str) -> None:
+        super().__init__(f"Snapshot '{name}' exists.", param_hint="VOLUME")
+
+
 class NoSnapshotsError(click.BadParameter):
     def __init__(self, name: str) -> None:
         super().__init__(f"'{name}' does not have snapshots.", param_hint="VOLUME")
@@ -81,9 +86,11 @@ class Volume:
 
 
 class Snapshot:
-    def __init__(self, volume: Volume, name) -> None:
+    def __init__(self, volume: Volume, name: str) -> None:
         if name is None:
-            name = self.generate_name()
+            while (volume.snapshots_store / (name := self.generate_name())).exists():
+                pass
+
         self.name = name
         self.volume = volume
         self.path = SNAPSHOT_STORE / self.volume.name / self.name
