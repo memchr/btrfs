@@ -1,4 +1,5 @@
 #!/usr/bin/python
+from __future__ import annotations
 from datetime import date, datetime
 import hashlib
 import os
@@ -10,6 +11,7 @@ import btrfsutil
 from btrfsutil import BtrfsUtilError
 import click
 import json
+
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
@@ -59,21 +61,23 @@ class SnapshotStorage:
         self.path = root / ".snapshots"
         self._json = self.path / "index.json"
         # silly, but not as much as _ = self.metadata
-        self.metadata_cached = self.metadata
+        self._metadata_cached = self._metadata
 
     def __div__(self, volume) -> Path:
         return self.path / volume
 
     @property
-    def metadata(self) -> MetadataType:
+    def _metadata(self) -> MetadataType:
         """ """
+        if not self._json.exists():
+            self._metadata = {}
         with self._json.open("r") as f:
             md = json.load(f)
-        self.metadata_cached = md
+        self._metadata_cached = md
         return md
 
-    @metadata.setter
-    def metadata(self, md: MetadataType):
+    @_metadata.setter
+    def _metadata(self, md: MetadataType):
         with self._json.open("w") as f:
             json.dump(
                 {
@@ -83,20 +87,42 @@ class SnapshotStorage:
                 f,
             )
 
-    def snapshot_delete(self, snapshot: "Snapshot"):
-        md = self.metadata
-        del md[snapshot.volume.name][snapshot.name]
-        self.metadata = md
+    def unregister(self, obj: "Snapshot" | "Volume"):
+        if isinstance(obj, Snapshot):
+            md = self._metadata
+            del md[obj.volume.name][obj.name]
+            self._metadata = md
+            pass
+        elif isinstance(obj, Volume):
+            raise NotImplementedError
 
-    def snapshot_insert(self, snapshot: "Snapshot"):
-        md = self.metadata if self._json.exists() else {}
-        volume = snapshot.volume
+    def register(self, obj: "Snapshot" | "Volume"):
+        if isinstance(obj, Snapshot):
+            md = self._metadata
+            volume = obj.volume
 
-        if volume.name in md:
-            md[volume.name][snapshot.name] = time.time()
-        else:
-            md[volume.name] = {snapshot.name: time.time()}
-        self.metadata = md
+            if volume.name in md:
+                md[volume.name][obj.name] = time.time()
+            else:
+                md[volume.name] = {obj.name: time.time()}
+            self._metadata = md
+        elif isinstance(obj, Volume):
+            raise NotImplementedError
+
+    def query(self, obj: "Snapshot" | "Volume") -> "Snapshot" | "Volume":
+        if isinstance(obj, Snapshot):
+            raise NotImplementedError
+        elif isinstance(obj, Volume):
+            return [
+                Snapshot(obj, name, time)
+                for name, time in self._metadata_cached[obj.name].items()
+            ]
+
+    def update(self, obj: "Snapshot" | "Volume") -> "Snapshot" | "Volume":
+        if isinstance(obj, Snapshot):
+            raise NotImplementedError
+        elif isinstance(obj, Volume):
+            raise NotImplementedError
 
     def iter(self):
         for d in self.path.iterdir():
@@ -133,10 +159,7 @@ class Volume:
         path = self.snapshots_path
         if not path.exists():
             return []
-        return [
-            Snapshot(self, name, time)
-            for name, time in self.storage.metadata_cached[self.name].items()
-        ]
+        return self.storage.query(self)
 
 
 class Snapshot:
@@ -154,24 +177,14 @@ class Snapshot:
         if self.path.exists():
             raise SnapshotExists(self.name)
         self.path.parent.mkdir(exist_ok=True, parents=True)
-        try:
-            btrfsutil.create_snapshot(
-                str(self.volume.path), str(self.path), read_only=True
-            )
-            self.volume.storage.snapshot_insert(self)
-        except BtrfsUtilError as e:
-            raise click.ClickException(e)
+        btrfsutil.create_snapshot(str(self.volume.path), str(self.path), read_only=True)
+        self.volume.storage.register(self)
 
     def delete(self) -> None:
         path = str(self.path)
-        try:
-            btrfsutil.set_subvolume_read_only(path, read_only=False)
-            btrfsutil.delete_subvolume(path)
-            self.volume.storage.snapshot_delete(self)
-        except BtrfsUtilError as e:
-            raise click.ClickException(e)
-        except KeyError as e:
-            raise Warning(f"Warning: snapshot metadata desync: {e}")
+        btrfsutil.set_subvolume_read_only(path, read_only=False)
+        btrfsutil.delete_subvolume(path)
+        self.volume.storage.unregister(self)
         pass
 
     @property
@@ -311,8 +324,9 @@ def delete(
         if not dry_run:
             try:
                 s.delete()
-            except Warning as e:
+            except (Warning, BtrfsUtilError) as e:
                 click.echo(e, err=True)
+
             # delete_subvolume(snapshots_path / s)
         click.echo(f"Deleted snapshot: '{name_s}/{click.style(s.name, fg="blue")}'")
     if all:
