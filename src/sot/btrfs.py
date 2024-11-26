@@ -3,7 +3,6 @@ from datetime import datetime
 import hashlib
 import os
 from pathlib import Path
-import time
 import btrfsutil
 import json
 
@@ -39,8 +38,16 @@ class NoSnapshotsError(FileNotFoundError):
 class SnapshotStorage:
     MetadataType = dict[str, dict[str, float]]
 
-    def __init__(self, root: Path) -> None:
-        self.root = ensure_path(root).resolve()
+    def __init__(self, root: Path | None = None) -> None:
+        if root is None:
+            root = Path.cwd()
+            while True:
+                if (root / ".sot").is_dir():
+                    break
+                root = root.parent
+        else:
+            root = ensure_path(root).resolve()
+        self.root = root
         self.path = root / config.SNAPSHOT_DIR
         self._json = self.path / "index.json"
         # silly, but not as much as _ = self.metadata

@@ -4,9 +4,10 @@ from datetime import date, datetime
 from pathlib import Path
 import shutil
 import time
-from typing import Any, override
+from typing import Any, List, override
 from btrfsutil import BtrfsUtilError
 import click
+import click.shell_completion
 
 from sot.btrfs import (
     NotASubvolume,
@@ -38,6 +39,13 @@ class VolumeParamType(click.ParamType):
         except (NotASubvolume, SubvolumeNotFound) as e:
             self.fail(e, param, ctx)
 
+    def shell_complete(
+        self, ctx: click.Context, param: click.Parameter, incomplete: str
+    ) -> List[click.shell_completion.CompletionItem]:
+        from click.shell_completion import CompletionItem
+
+        return [CompletionItem(incomplete, type="dir")]
+
 
 class args:
     @staticmethod
@@ -58,7 +66,7 @@ class args:
 )
 def cli(root: Path):
     """BTRFS snapshots management."""
-    config.STORAGE = SnapshotStorage(root if root is not None else Path.home())
+    config.STORAGE = SnapshotStorage(root)
 
 
 @cli.command()
@@ -108,6 +116,17 @@ class _DateTime(click.DateTime):
         if value == "today":
             return date.today()
         return super().convert(value, *args, **kwargs)
+
+
+@cli.command()
+@args.volume(exists=False)
+@click.argument("snapshot", type=click.STRING)
+@click.argument("name", type=click.STRING)
+def rename(volume: Volume, snapshot: Snapshot, name: str):
+    """Rename snapshot"""
+    print(volume, snapshot, name)
+    snapshot = volume.snapshots_path / snapshot
+    pass
 
 
 @cli.command()
