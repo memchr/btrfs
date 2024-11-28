@@ -87,6 +87,7 @@ class SnapshotStorage:
             md = self._metadata
             del md[obj.volume.name][obj.name]
             self._metadata = md
+            self._metadata_cached = md
             pass
         elif isinstance(obj, Volume):
             raise NotImplementedError
@@ -101,6 +102,7 @@ class SnapshotStorage:
             else:
                 md[volume.name] = {obj.name: obj.time}
             self._metadata = md
+            self._metadata_cached = md
         elif isinstance(obj, Volume):
             raise NotImplementedError
 
