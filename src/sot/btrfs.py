@@ -153,10 +153,10 @@ class Volume:
 
     def assert_is_volume(self):
         path = self.path
-        if not btrfsutil.is_subvolume(str(path)):
-            raise NotASubvolume(path)
         if not path.exists():
             raise SubvolumeNotFound(path)
+        if not btrfsutil.is_subvolume(str(path)):
+            raise NotASubvolume(path)
 
     def assert_has_snapshots(self):
         if not self.snapshots_path.exists():
