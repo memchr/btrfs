@@ -50,7 +50,7 @@ def create(volume: Volume, snapshot: Snapshot):
 
 
 @cli.command(name="list")
-@args.volume(required=False, exists=False)
+@args.volume(required=False, exists=False, has_snapshots=True)
 def list_(volume: Volume):
     """List all snapshots."""
     volumes_snapshots: dict[Volume, list[Snapshot]]
@@ -93,7 +93,7 @@ def rename(volume: Volume, snapshot: Snapshot, name: str):
 
 
 @cli.command()
-@args.volume(exists=False)
+@args.volume(exists=False, has_snapshots=True)
 @click.argument("snapshots", type=args.Snapshot(exists=True), required=False, nargs=-1)
 @click.option(
     "-n",

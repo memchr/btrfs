@@ -156,6 +156,10 @@ class Volume:
         if not path.exists():
             raise SubvolumeNotFound(path)
 
+    def assert_has_snapshots(self):
+        if not self.snapshots_path.exists():
+            raise NoSnapshotsError(self)
+
     @property
     def snapshots(self) -> list["Snapshot"]:
         path = self.snapshots_path

@@ -9,8 +9,9 @@ from sot.btrfs import config
 class Volume(click.ParamType):
     name = "volume"
 
-    def __init__(self, exists=False) -> None:
+    def __init__(self, exists=False, has_snapshots=False) -> None:
         self.exists = exists
+        self.has_snapshots = has_snapshots
         super().__init__()
 
     def convert(
@@ -19,8 +20,15 @@ class Volume(click.ParamType):
         if isinstance(value, btrfs.Volume):
             return value
         try:
-            return btrfs.Volume(value, exists=self.exists)
-        except (btrfs.NotASubvolume, btrfs.SubvolumeNotFound) as e:
+            volume = btrfs.Volume(value, exists=self.exists)
+            if self.has_snapshots:
+                volume.assert_has_snapshots()
+            return volume
+        except (
+            btrfs.NotASubvolume,
+            btrfs.SubvolumeNotFound,
+            btrfs.NoSnapshotsError,
+        ) as e:
             self.fail(e, param, ctx)
 
     def shell_complete(
@@ -31,11 +39,11 @@ class Volume(click.ParamType):
         return [CompletionItem(incomplete, type="dir")]
 
 
-def volume(required=True, exists=True):
+def volume(exists=True, has_snapshots=False, **kwargs):
     return click.argument(
         "volume",
-        type=Volume(exists=exists),
-        required=required,
+        type=Volume(exists=exists, has_snapshots=has_snapshots),
+        **kwargs,
     )
 
 
