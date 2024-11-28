@@ -37,7 +37,7 @@ class SnapshotExists(FileExistsError):
 
 class NoSnapshotsError(FileNotFoundError):
     def __init__(self, volume) -> None:
-        super().__init__(f"'{volume}' does not have snapshots.")
+        super().__init__(f"Subvolume '{volume}' does not have snapshots.")
 
 
 class SnapshotStorage:
@@ -183,18 +183,19 @@ class Snapshot:
         self.time = time
 
     def create(self) -> None:
-        if self.path.exists():
-            raise SnapshotExists(self)
         self.path.parent.mkdir(exist_ok=True, parents=True)
         btrfsutil.create_snapshot(str(self.volume.path), str(self.path), read_only=True)
         config.STORAGE.register(self)
+
+    def assert_not_exists(self):
+        if self.path.exists():
+            raise SnapshotExists(self)
 
     def delete(self) -> None:
         path = str(self.path)
         btrfsutil.set_subvolume_read_only(path, read_only=False)
         btrfsutil.delete_subvolume(path)
         config.STORAGE.unregister(self)
-        pass
 
     @property
     def strtime(self):

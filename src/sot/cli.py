@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 import shutil
-import time
 from typing import Any, override
 from btrfsutil import BtrfsUtilError
 import click
@@ -40,7 +39,7 @@ def init():
 
 @cli.command()
 @args.volume(exists=True)
-@args.snapshot(exists=False, required=None)
+@args.snapshot(exists=False)
 def create(volume: Volume, snapshot: Snapshot):
     """Create new snapshot."""
     snapshot.create()
@@ -83,7 +82,7 @@ class _DateTime(click.DateTime):
 
 @cli.command()
 @args.volume(exists=False)
-@click.argument("snapshot", type=args.Snapshot())
+@args.snapshot()
 @click.argument("name", type=click.STRING)
 def rename(volume: Volume, snapshot: Snapshot, name: str):
     """Rename snapshot"""
@@ -94,7 +93,7 @@ def rename(volume: Volume, snapshot: Snapshot, name: str):
 
 @cli.command()
 @args.volume(exists=False, has_snapshots=True)
-@click.argument("snapshots", type=args.Snapshot(exists=True), required=False, nargs=-1)
+@args.snapshot("snapshots", required=False, nargs=-1)
 @click.option(
     "-n",
     "--dry-run",
@@ -143,7 +142,7 @@ def delete(
                 click.echo(f"Warning: {e}", err=True)
         else:
             click.echo(f"Would delete: '{name_s}/{click.style(s.name, fg="blue")}'")
-    if all:
+    if all or len(volume.snapshots) == 0:
         if not dry_run:
             volume.snapshots_path.rmdir()
             click.echo(f"Removed snapshots dir for subvolume {name_s}")
@@ -152,7 +151,4 @@ def delete(
 
 
 def main():
-    try:
-        cli()
-    except FileNotFoundError as e:
-        print(e)
+    cli()

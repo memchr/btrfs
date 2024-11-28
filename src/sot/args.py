@@ -64,8 +64,15 @@ class Snapshot(click.ParamType):
             if self.exists:
                 return config.STORAGE.query(btrfs.Snapshot(name=value, volume=volume))
             else:
-                return btrfs.Snapshot(name=value, volume=volume, time=time.time())
-        except (btrfs.NotASubvolume, btrfs.SubvolumeNotFound) as e:
+                snapshot = btrfs.Snapshot(name=value, volume=volume, time=time.time())
+                snapshot.assert_not_exists()
+                return snapshot
+        except (
+            btrfs.NotASubvolume,
+            btrfs.SnapshotExists,
+            btrfs.SubvolumeNotFound,
+            btrfs.SnapshotNotFound,
+        ) as e:
             self.fail(e, param, ctx)
 
     # def shell_complete(
@@ -76,10 +83,11 @@ class Snapshot(click.ParamType):
     #     return [CompletionItem(incomplete, type="dir")]
 
 
-def snapshot(required=True, exists=True):
+def snapshot(decl="snapshot", exists=True, nargs=1, **kwargs):
     return click.argument(
-        "snapshot",
+        decl,
         type=Snapshot(exists=exists),
-        required=required,
-        default=btrfs.Snapshot.generate_name,
+        default=btrfs.Snapshot.generate_name if nargs != -1 else None,
+        nargs=nargs,
+        **kwargs,
     )
