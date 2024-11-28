@@ -40,10 +40,9 @@ def init():
 
 @cli.command()
 @args.volume(exists=True)
-@click.argument("name", type=click.STRING, required=False)
-def create(volume: Volume, name):
+@args.snapshot(exists=False, required=None)
+def create(volume: Volume, snapshot: Snapshot):
     """Create new snapshot."""
-    snapshot = Snapshot(volume, name, time=time.time())
     snapshot.create()
     click.echo(
         f"Snapshot '{click.style(volume.name, fg="green", bold=True)}/{click.style(snapshot.name, fg="blue")}' created"
@@ -84,18 +83,18 @@ class _DateTime(click.DateTime):
 
 @cli.command()
 @args.volume(exists=False)
-@click.argument("snapshot", type=click.STRING)
+@click.argument("snapshot", type=args.Snapshot())
 @click.argument("name", type=click.STRING)
 def rename(volume: Volume, snapshot: Snapshot, name: str):
     """Rename snapshot"""
-    print(volume, snapshot, name)
     snapshot = volume.snapshots_path / snapshot
+    print(volume, snapshot, name)
     pass
 
 
 @cli.command()
 @args.volume(exists=False)
-@click.argument("snapshots", type=click.STRING, required=False, nargs=-1)
+@click.argument("snapshots", type=args.Snapshot(exists=True), required=False, nargs=-1)
 @click.option(
     "-n",
     "--dry-run",
@@ -125,8 +124,6 @@ def delete(
             # snapshots = [name for name in volume.snapshots if name < b]
         if len(snapshots) == 0:
             raise click.UsageError("No snapshots available for deletion.")
-    else:
-        snapshots = [Snapshot(volume, name) for name in snapshots]
     if dry_run:
         click.echo("Dry run, no snapshots will be deleted...")
     else:
@@ -144,10 +141,14 @@ def delete(
                 click.echo(f"Error: {e.strerror}: {e.filename}", err=True)
             except Warning as e:
                 click.echo(f"Warning: {e}", err=True)
+        else:
+            click.echo(f"Would delete: '{name_s}/{click.style(s.name, fg="blue")}'")
     if all:
         if not dry_run:
             volume.snapshots_path.rmdir()
-        click.echo(f"Removed snapshots dir for subvolume {name_s}")
+            click.echo(f"Removed snapshots dir for subvolume {name_s}")
+        else:
+            click.echo(f"Would remove snapshots dir for subvolume {name_s}")
 
 
 def main():

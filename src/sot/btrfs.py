@@ -21,18 +21,23 @@ class NotASubvolume(ValueError):
 
 
 class SubvolumeNotFound(FileNotFoundError):
-    def __init__(self, path: str) -> None:
-        super().__init__(f"Subvolume '{path}' not found.")
+    def __init__(self, volume) -> None:
+        super().__init__(f"Subvolume '{volume}' not found.")
+
+
+class SnapshotNotFound(FileNotFoundError):
+    def __init__(self, snapshot) -> None:
+        super().__init__(f"Snapshot '{snapshot}' not found.")
 
 
 class SnapshotExists(FileExistsError):
-    def __init__(self, name: str) -> None:
-        super().__init__(f"Snapshot '{name}' exists.")
+    def __init__(self, snapshot) -> None:
+        super().__init__(f"Snapshot '{snapshot}' exists.")
 
 
 class NoSnapshotsError(FileNotFoundError):
-    def __init__(self, name: str) -> None:
-        super().__init__(f"'{name}' does not have snapshots.")
+    def __init__(self, volume) -> None:
+        super().__init__(f"'{volume}' does not have snapshots.")
 
 
 class SnapshotStorage:
@@ -101,7 +106,16 @@ class SnapshotStorage:
 
     def query(self, obj: "Snapshot" | "Volume") -> "Snapshot" | "Volume":
         if isinstance(obj, Snapshot):
-            raise NotImplementedError
+            try:
+                volume = self._metadata_cached[obj.volume.name]
+            except KeyError:
+                raise SubvolumeNotFound(obj.volume)
+            try:
+                obj.time = volume[obj.name]
+                return obj
+            except KeyError:
+                raise SnapshotNotFound(obj)
+
         elif isinstance(obj, Volume):
             return [
                 Snapshot(obj, name, time)
@@ -149,6 +163,9 @@ class Volume:
             return []
         return config.STORAGE.query(self)
 
+    def __repr__(self) -> str:
+        return str(self.path)
+
 
 class Snapshot:
     def __init__(self, volume: Volume, name: str, time: float = 0) -> None:
@@ -163,7 +180,7 @@ class Snapshot:
 
     def create(self) -> None:
         if self.path.exists():
-            raise SnapshotExists(self.name)
+            raise SnapshotExists(self)
         self.path.parent.mkdir(exist_ok=True, parents=True)
         btrfsutil.create_snapshot(str(self.volume.path), str(self.path), read_only=True)
         config.STORAGE.register(self)
@@ -182,3 +199,6 @@ class Snapshot:
     @staticmethod
     def generate_name():
         return hashlib.sha256(os.urandom(16)).hexdigest()[:8]
+
+    def __repr__(self) -> str:
+        return self.name
