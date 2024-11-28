@@ -106,23 +106,22 @@ class SnapshotStorage:
         elif isinstance(obj, Volume):
             raise NotImplementedError
 
-    def query(self, obj: "Snapshot" | "Volume") -> "Snapshot" | "Volume":
-        if isinstance(obj, Snapshot):
-            try:
-                volume = self._metadata_cached[obj.volume.name]
-            except KeyError:
-                raise SubvolumeNotFound(obj.volume)
-            try:
-                obj.time = volume[obj.name]
-                return obj
-            except KeyError:
-                raise SnapshotNotFound(obj)
+    def snapshots(self, volume: "Volume") -> dict[str, Snapshot]:
+        return {
+            name: Snapshot(volume, name, time)
+            for name, time in self._metadata_cached[volume.name].items()
+        }
 
-        elif isinstance(obj, Volume):
-            return {
-                name: Snapshot(obj, name, time)
-                for name, time in self._metadata_cached[obj.name].items()
-            }
+    def find_snapshot(self, snapshot) -> Snapshot:
+        try:
+            volume = self._metadata_cached[snapshot.volume.name]
+        except KeyError:
+            raise SubvolumeNotFound(snapshot.volume)
+        try:
+            snapshot.time = volume[snapshot.name]
+            return snapshot
+        except KeyError:
+            raise SnapshotNotFound(snapshot)
 
     def update(self, obj: "Snapshot" | "Volume") -> "Snapshot" | "Volume":
         if isinstance(obj, Snapshot):
@@ -167,7 +166,7 @@ class Volume:
         path = self.snapshots_path
         if not path.exists():
             return dict()
-        return config.STORAGE.query(self)
+        return config.STORAGE.snapshots(self)
 
     def __repr__(self) -> str:
         return str(self.path)
