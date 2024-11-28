@@ -77,12 +77,14 @@ class Snapshot(click.ParamType):
         ) as e:
             self.fail(e, param, ctx)
 
-    # def shell_complete(
-    #     self, ctx: click.Context, param: click.Parameter, incomplete: str
-    # ) -> List[click.shell_completion.CompletionItem]:
-    #     from click.shell_completion import CompletionItem
+    def shell_complete(
+        self, ctx: click.Context, param: click.Parameter, incomplete: str
+    ) -> List[click.shell_completion.CompletionItem]:
+        from click.shell_completion import CompletionItem
 
-    #     return [CompletionItem(incomplete, type="dir")]
+        volume: btrfs.Volume = ctx.params["volume"]
+
+        return [CompletionItem(n) for n in volume.snapshots.keys()]
 
 
 def snapshot(decl="snapshot", exists=True, nargs=1, **kwargs):

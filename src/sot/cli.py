@@ -1,6 +1,7 @@
 #!/usr/bin/python
 from __future__ import annotations
 from datetime import date, datetime
+import os
 from pathlib import Path
 import shutil
 from typing import Any, override
@@ -165,4 +166,8 @@ def styled(obj: Snapshot | Volume) -> str:
 
 
 def main():
+    # Workaround: click doesn't call cli() in completion mode, so we need to set
+    # config.STORAGE here
+    if "_SOT_COMPLETE" in os.environ:
+        config.STORAGE = SnapshotStorage()
     cli()
