@@ -10,6 +10,7 @@ import click.shell_completion
 
 from sot.btrfs import (
     Snapshot,
+    SnapshotExists,
     SnapshotStorage,
     Volume,
     config,
@@ -86,9 +87,12 @@ class _DateTime(click.DateTime):
 @click.argument("name", type=click.STRING)
 def rename(volume: Volume, snapshot: Snapshot, name: str):
     """Rename snapshot"""
-    snapshot = volume.snapshots_path / snapshot
-    print(volume, snapshot, name)
-    pass
+    try:
+        old = snapshot.name
+        snapshot.name = name
+        click.echo(f"Renamed Snapshot {old} to {snapshot.name}")
+    except SnapshotExists as e:
+        raise click.UsageError(f"Cannot rename f{snapshot.name} to {name}: {e}")
 
 
 @cli.command()

@@ -3,6 +3,7 @@ from datetime import datetime
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import btrfsutil
 import json
 
@@ -88,7 +89,6 @@ class SnapshotStorage:
             del md[obj.volume.name][obj.name]
             self._metadata = md
             self._metadata_cached = md
-            pass
         elif isinstance(obj, Volume):
             raise NotImplementedError
 
@@ -179,8 +179,9 @@ class Snapshot:
             while (volume.snapshots_path / (name := self.generate_name())).exists():
                 pass
 
-        self.name = name
         self.volume = volume
+        self.path: str
+        self._name = name
         self.path = self.volume.snapshots_path / self.name
         self.time = time
 
@@ -189,13 +190,35 @@ class Snapshot:
         btrfsutil.create_snapshot(str(self.volume.path), str(self.path), read_only=True)
         config.STORAGE.register(self)
 
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @name.setter
+    def name(self, new_name):
+        config.STORAGE.unregister(self)
+        self._name = new_name
+        self.readonly = False
+        old_path = self.path
+        self.path = self.volume.snapshots_path / self._name
+        shutil.move(old_path, self.path)
+        config.STORAGE.register(self)
+
+    @property
+    def readonly(self) -> bool:
+        return btrfsutil.get_subvolume_read_only(self.path)
+
+    @readonly.setter
+    def readonly(self, read_only: bool):
+        btrfsutil.set_subvolume_read_only(str(self.path), read_only=read_only)
+
     def assert_not_exists(self):
         if self.path.exists():
             raise SnapshotExists(self)
 
     def delete(self) -> None:
         path = str(self.path)
-        btrfsutil.set_subvolume_read_only(path, read_only=False)
+        self.readonly = False
         btrfsutil.delete_subvolume(path)
         config.STORAGE.unregister(self)
 
