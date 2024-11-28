@@ -179,7 +179,7 @@ class Snapshot:
                 pass
 
         self.volume = volume
-        self.path: str
+        self.path: Path
         self._name = name
         self.path = self.volume.snapshots_path / self.name
         self.time = time

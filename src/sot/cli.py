@@ -149,6 +149,14 @@ def delete(
             click.echo(f"Would remove snapshots dir for subvolume {vol_styled}")
 
 
+@cli.command()
+@args.volume()
+@args.snapshot()
+def path(volume, snapshot: Snapshot):
+    """Print absolute path of snapshot"""
+    print(snapshot.path.resolve())
+
+
 def styled(obj: Snapshot | Volume) -> str:
     if isinstance(obj, Snapshot):
         return click.style(obj.name, fg="yellow")
