@@ -173,11 +173,13 @@ def delete(
         if not dry_run:
             try:
                 s.delete()
-            except (Warning, BtrfsUtilError) as e:
-                click.echo(e, err=True)
-
-            # delete_subvolume(snapshots_path / s)
-        click.echo(f"Deleted snapshot: '{name_s}/{click.style(s.name, fg="blue")}'")
+                click.echo(
+                    f"Deleted snapshot: '{name_s}/{click.style(s.name, fg="blue")}'"
+                )
+            except BtrfsUtilError as e:
+                click.echo(f"Error: {e.strerror}: {e.filename}", err=True)
+            except Warning as e:
+                click.echo(f"Warning: {e}", err=True)
     if all:
         if not dry_run:
             volume.snapshots_path.rmdir()
