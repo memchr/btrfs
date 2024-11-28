@@ -67,9 +67,9 @@ def list_(volume: Volume):
     leftpad = min(shutil.get_terminal_size().columns - 16, 60)
     for volume, snapshots in volumes_snapshots.items():
         click.secho(volume, fg="green", bold=True)
-        for snapshot in snapshots:
+        for name, snapshot in snapshots.items():
             click.echo(
-                f"  {click.style(snapshot.name, fg="yellow"):<{leftpad}} {snapshot.strtime}"
+                f"  {click.style(name, fg="yellow"):<{leftpad}} {snapshot.strtime}"
             )
 
 
@@ -118,9 +118,9 @@ def delete(
     """Delete snapshots."""
     if len(snapshots) == 0:
         if all:
-            snapshots = volume.snapshots
+            snapshots = volume.snapshots.values()
         elif keep is not None:
-            snapshots = volume.snapshots[:-keep]
+            snapshots = volume.snapshots.values()[:-keep]
         elif before is not None:
             raise NotImplementedError
             # b = before.strftime(DATETIME_FORMAT)

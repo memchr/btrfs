@@ -119,10 +119,10 @@ class SnapshotStorage:
                 raise SnapshotNotFound(obj)
 
         elif isinstance(obj, Volume):
-            return [
-                Snapshot(obj, name, time)
+            return {
+                name: Snapshot(obj, name, time)
                 for name, time in self._metadata_cached[obj.name].items()
-            ]
+            }
 
     def update(self, obj: "Snapshot" | "Volume") -> "Snapshot" | "Volume":
         if isinstance(obj, Snapshot):
@@ -163,10 +163,10 @@ class Volume:
             raise NoSnapshotsError(self)
 
     @property
-    def snapshots(self) -> list["Snapshot"]:
+    def snapshots(self) -> dict[str, "Snapshot"]:
         path = self.snapshots_path
         if not path.exists():
-            return []
+            return dict()
         return config.STORAGE.query(self)
 
     def __repr__(self) -> str:
