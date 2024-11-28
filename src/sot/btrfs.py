@@ -196,6 +196,9 @@ class Snapshot:
 
     @name.setter
     def name(self, new_name):
+        if new_name in self.volume.snapshots:
+            raise SnapshotExists(new_name)
+
         config.STORAGE.unregister(self)
         self._name = new_name
         self.readonly = False

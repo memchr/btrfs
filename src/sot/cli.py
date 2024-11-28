@@ -53,24 +53,21 @@ def create(volume: Volume, snapshot: Snapshot):
 @args.volume(required=False, exists=False, has_snapshots=True)
 def list_(volume: Volume):
     """List all snapshots."""
-    volumes_snapshots: dict[Volume, list[Snapshot]]
+    volumes_snapshots: dict[Volume, dict[str, Snapshot]]
 
     if volume is None:
         click.echo("Listing all snapshots...")
         volumes_snapshots = {
-            (v := Volume(name=d.name)).relative_path: v.snapshots
-            for d in config.STORAGE.iter()
+            (v := Volume(name=d.name)): v.snapshots for d in config.STORAGE.iter()
         }
     else:
-        volumes_snapshots = {volume.relative_path: volume.snapshots}
+        volumes_snapshots = {volume: volume.snapshots}
 
     leftpad = min(shutil.get_terminal_size().columns - 16, 60)
     for volume, snapshots in volumes_snapshots.items():
-        click.secho(volume, fg="green", bold=True)
-        for name, snapshot in snapshots.items():
-            click.echo(
-                f"  {click.style(name, fg="yellow"):<{leftpad}} {snapshot.strtime}"
-            )
+        click.echo(styled(volume))
+        for snapshot in snapshots.values():
+            click.echo(f"  {styled(snapshot):<{leftpad}} {snapshot.strtime}")
 
 
 class _DateTime(click.DateTime):
@@ -88,11 +85,11 @@ class _DateTime(click.DateTime):
 def rename(volume: Volume, snapshot: Snapshot, name: str):
     """Rename snapshot"""
     try:
-        old = snapshot.name
+        old = styled(snapshot)
         snapshot.name = name
-        click.echo(f"Renamed Snapshot {old} to {snapshot.name}")
+        click.echo(f"Renamed Snapshot {old} to {styled(snapshot)}")
     except SnapshotExists as e:
-        raise click.UsageError(f"Cannot rename f{snapshot.name} to {name}: {e}")
+        raise click.UsageError(f"Cannot rename 'f{snapshot.name}' to '{name}': {e}")
 
 
 @cli.command()
@@ -132,26 +129,31 @@ def delete(
     else:
         click.echo("Deleting snapshots...")
 
-    name_s = click.style(volume.relative_path, fg="green", bold=True)
+    vol_styled = styled(volume)
     for s in snapshots:
         if not dry_run:
             try:
                 s.delete()
-                click.echo(
-                    f"Deleted snapshot: '{name_s}/{click.style(s.name, fg="blue")}'"
-                )
+                click.echo(f"Deleted snapshot: '{vol_styled}/{styled(s)}'")
             except BtrfsUtilError as e:
                 click.echo(f"Error: {e.strerror}: {e.filename}", err=True)
             except Warning as e:
                 click.echo(f"Warning: {e}", err=True)
         else:
-            click.echo(f"Would delete: '{name_s}/{click.style(s.name, fg="blue")}'")
+            click.echo(f"Would delete: '{vol_styled}/{styled(s)}'")
     if all or len(volume.snapshots) == 0:
         if not dry_run:
             volume.snapshots_path.rmdir()
-            click.echo(f"Removed snapshots dir for subvolume {name_s}")
+            click.echo(f"Removed snapshots dir for subvolume {vol_styled}")
         else:
-            click.echo(f"Would remove snapshots dir for subvolume {name_s}")
+            click.echo(f"Would remove snapshots dir for subvolume {vol_styled}")
+
+
+def styled(obj: Snapshot | Volume) -> str:
+    if isinstance(obj, Snapshot):
+        return click.style(obj.name, fg="yellow")
+    elif isinstance(obj, Volume):
+        return click.style(obj.relative_path, fg="green", bold=True)
 
 
 def main():
