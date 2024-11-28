@@ -4,57 +4,21 @@ from datetime import date, datetime
 from pathlib import Path
 import shutil
 import time
-from typing import Any, List, override
+from typing import Any, override
 from btrfsutil import BtrfsUtilError
 import click
 import click.shell_completion
 
 from sot.btrfs import (
-    NotASubvolume,
     Snapshot,
     SnapshotStorage,
-    SubvolumeNotFound,
     Volume,
     config,
 )
+from sot import args
 
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
-
-
-class VolumeParamType(click.ParamType):
-    name = "volume"
-
-    def __init__(self, exists=False) -> None:
-        self.exists = exists
-        super().__init__()
-
-    def convert(
-        self, value: Any, param: click.Parameter | None, ctx: click.Context | None
-    ) -> Any:
-        if isinstance(value, Volume):
-            return value
-        try:
-            return Volume(value, exists=self.exists)
-        except (NotASubvolume, SubvolumeNotFound) as e:
-            self.fail(e, param, ctx)
-
-    def shell_complete(
-        self, ctx: click.Context, param: click.Parameter, incomplete: str
-    ) -> List[click.shell_completion.CompletionItem]:
-        from click.shell_completion import CompletionItem
-
-        return [CompletionItem(incomplete, type="dir")]
-
-
-class args:
-    @staticmethod
-    def volume(required=True, exists=True):
-        return click.argument(
-            "volume",
-            type=VolumeParamType(exists=exists),
-            required=required,
-        )
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
