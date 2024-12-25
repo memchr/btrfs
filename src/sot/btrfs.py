@@ -165,20 +165,18 @@ class SnapshotStorage:
 class Volume:
     def __init__(self, path: Path = None, exists=False, id: int = None) -> None:
         """
-        Relative volume path is interepted as relative path to SubvolumeStorage
-        if it cannot be found in current directory
+        Arguments:
+            id {int} -- Volume ID in the database
+            path {Path} -- Path to the volume, relative to the storage root
+            exists {bool} -- Check if the volume exists
         """
-        path = ensure_path(path)
-        path = path.resolve() if path.exists() else config.STORAGE.root / path
-
-        # relative path of the volume to the storage root
-        self.path = path.relative_to(config.STORAGE.root)
-        # escaped name of the volume
+        self.path = ensure_path(path)
+        self.id: int | None = id
+        # escape volume name
         self.name = escape(self.path)
-        # absolute path of the volume
-        self.path_absolute = path
-
-        self.id: int = id
+        # path of volume in the filesystem
+        self.realpath = config.STORAGE.root / self.path
+        # subvolume storage path
         self.storage = config.STORAGE.path / self.name
 
         if exists:
@@ -189,7 +187,7 @@ class Volume:
         return config.STORAGE.snapshots(self)
 
     def assert_is_volume(self):
-        path = self.path_absolute
+        path = self.realpath
         if not path.exists():
             raise SubvolumeNotFound(path)
         if not btrfsutil.is_subvolume(str(path)):
@@ -244,7 +242,7 @@ class Snapshot:
     def create(self) -> None:
         self.path.parent.mkdir(exist_ok=True, parents=True)
         btrfsutil.create_snapshot(
-            str(self.volume.path_absolute), str(self.path), read_only=True
+            str(self.volume.realpath), str(self.path), read_only=True
         )
         config.STORAGE.register(self)
 
