@@ -89,12 +89,16 @@ class Snapshot(click.ParamType):
         return [CompletionItem(n) for n in volume.snapshots.keys()]
 
 
-def snapshot(decl="snapshot", exists=True, nargs=1, required=False, **kwargs):
-    if not required:
-        kwargs.setdefault("default", btrfs.Snapshot.generate_name if nargs != -1 else None)
+def snapshot(decl="snapshot", exists=True, nargs=1, required=True, new=False, **kwargs):
+    if new:
+        kwargs.setdefault("default", btrfs.Snapshot.generate_name() if nargs != -1 else None)
+        required = False
+        exists = False
+
     return click.argument(
         decl,
         type=Snapshot(exists=exists),
         nargs=nargs,
+        required=required,
         **kwargs,
     )

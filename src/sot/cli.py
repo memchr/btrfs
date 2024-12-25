@@ -42,7 +42,7 @@ def init():
 
 @cli.command()
 @args.volume(exists=True)
-@args.snapshot(exists=False)
+@args.snapshot(new=True)
 @click.option(
     "-f",
     "--force",
@@ -181,7 +181,7 @@ def delete(
 
 @cli.command()
 @args.volume()
-@args.snapshot(required=True)
+@args.snapshot()
 def path(volume, snapshot: Snapshot):
     """Print absolute path of snapshot"""
     print(snapshot.path.resolve())
