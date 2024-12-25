@@ -35,11 +35,9 @@ class Volume(click.ParamType):
         self, ctx: click.Context, param: click.Parameter, incomplete: str
     ) -> List[click.shell_completion.CompletionItem]:
         from click.shell_completion import CompletionItem
-        from sot.utils import unescape
 
         if ctx.command.name not in ("create"):
-            volumes = config.STORAGE.volumes()
-            return [CompletionItem(unescape(volume.name)) for volume in volumes if incomplete in unescape(volume.name) and volume.is_dir()]
+            return [CompletionItem(v.path) for v in config.STORAGE.volumes()]
         return [CompletionItem(incomplete, type="dir")]
 
 
