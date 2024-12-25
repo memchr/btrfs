@@ -182,7 +182,7 @@ def delete(
 
 @cli.command()
 @args.volume()
-@args.snapshot()
+@args.snapshot(required=True)
 def path(volume, snapshot: Snapshot):
     """Print absolute path of snapshot"""
     print(snapshot.path.resolve())
