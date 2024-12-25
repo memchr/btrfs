@@ -80,34 +80,32 @@ class SnapshotStorage:
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_volume_name ON volumes (name)")
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_volume_id ON snapshots (volume_id)")
 
-    def _get_volume_id(self, volume_name: str) -> int:
+
+    def _volume_id(self, volume: Volume) -> int:
         with self._conn:
             row = self._conn.execute(
                 "SELECT id FROM volumes WHERE name = ?",
-                (volume_name,)
+                (volume.name,)
             ).fetchone()
-            if row is None:
-                self._conn.execute(
-                    "INSERT INTO volumes (name) VALUES (?)",
-                    (volume_name,)
-                )
-                row = self._conn.execute(
-                    "SELECT id FROM volumes WHERE name = ?",
-                    (volume_name,)
-                ).fetchone()
-            return row[0]
+        return row[0] if row is not None else None
 
     def unregister(self, obj: "Snapshot" | "Volume"):
         if isinstance(obj, Snapshot):
             with self._conn:
-                volume_id = self._get_volume_id(obj.volume.name)
+                volume_id = self._volume_id(obj.volume)
+                if volume_id is  None:
+                    return
+
                 self._conn.execute(
                     "DELETE FROM snapshots WHERE volume_id = ? AND name = ?",
                     (volume_id, obj.name)
                 )
         elif isinstance(obj, Volume):
             with self._conn:
-                volume_id = self._get_volume_id(obj.name)
+                volume_id = self._volume_id(obj)
+                if volume_id is  None:
+                    return
+
                 self._conn.execute(
                     "DELETE FROM snapshots WHERE volume_id = ?",
                     (volume_id,)
@@ -120,16 +118,20 @@ class SnapshotStorage:
     def register(self, obj: "Snapshot" | "Volume"):
         if isinstance(obj, Snapshot):
             with self._conn:
-                volume_id = self._get_volume_id(obj.volume.name)
+                volume_id = self._volume_id(obj.volume)
                 self._conn.execute(
                     "INSERT OR REPLACE INTO snapshots (volume_id, name, time) VALUES (?, ?, ?)",
                     (volume_id, obj.name, obj.time)
                 )
         elif isinstance(obj, Volume):
-            self._get_volume_id(obj.name)
+            with self._conn:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO volumes (name) VALUES (?)",
+                    (obj.name,)
+                )
 
     def snapshots(self, volume: "Volume") -> dict[str, Snapshot]:
-        volume_id = self._get_volume_id(volume.name)
+        volume_id = self._volume_id(volume)
         with self._conn:
             rows = self._conn.execute(
                 "SELECT name, time FROM snapshots WHERE volume_id = ?",
@@ -138,7 +140,7 @@ class SnapshotStorage:
         return {name: Snapshot(volume, name, time) for name, time in rows}
 
     def find_snapshot(self, snapshot) -> Snapshot:
-        volume_id = self._get_volume_id(snapshot.volume.name)
+        volume_id = self._volume_id(snapshot.volume)
         with self._conn:
             row = self._conn.execute(
                 "SELECT time FROM snapshots WHERE volume_id = ? AND name = ?",
