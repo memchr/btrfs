@@ -85,11 +85,12 @@ class SnapshotStorage:
                 "CREATE INDEX IF NOT EXISTS idx_snapshot_volume_id ON snapshots (volume_id)"
             )
 
-    def load(self, obj: "Snapshot" | "Volume"):
+    def load(self, obj: "Snapshot" | "Volume", force = False):
+        # object is already loaded
+        if obj.id is not None and not force:
+            return
+
         if isinstance(obj, Volume):
-            # volume is already loaded
-            if obj.id is not None:
-                return
 
             with self._conn:
                 row = self._conn.execute(
