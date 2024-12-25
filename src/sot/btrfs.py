@@ -267,7 +267,7 @@ class Volume:
             head = self.snapshots["HEAD"]
 
         # delete current volume/dir if it exists
-        btrfsutil.delete_subvolume(str(self.realpath))
+        self.delete()
 
         if back_to_head:
             head.load_to_path(self.realpath)
@@ -276,6 +276,9 @@ class Volume:
         else:
             snapshot.load_to_path(self.realpath)
             return snapshot
+
+    def delete(self):
+        btrfsutil.delete_subvolume(str(self.realpath))
 
     @property
     def snapshots(self) -> dict[str, "Snapshot"]:
