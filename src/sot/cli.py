@@ -60,11 +60,17 @@ def create(volume: Volume, snapshot: Snapshot, force: bool):
 
 @cli.command(name="list")
 @args.volume(required=False, exists=False, has_snapshots=True)
-def list_(volume: Volume):
+@click.option("-v", "--volume-only", is_flag=True, help="List only volumes")
+def list_(volume: Volume, volume_only: bool):
     """List all snapshots."""
     volumes_snapshots: dict[Volume, dict[str, Snapshot]]
 
-    if volume is None:
+    if volume_only:
+        click.echo("Listing all volumes...")
+        for v in [Volume(name=d.name) for d in config.STORAGE.iter()]:
+            click.echo(styled(v))
+        return
+    elif volume is None:
         click.echo("Listing all snapshots...")
         volumes_snapshots = {
             (v := Volume(name=d.name)): v.snapshots for d in config.STORAGE.iter()
