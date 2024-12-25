@@ -8,12 +8,10 @@ import btrfsutil
 import sqlite3
 
 from sot.utils import ensure_path, escape, unescape
+from sot import config
 
 
-class config:
-    STORAGE: "SnapshotStorage" = None
-    DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
-    SNAPSHOT_DIR = ".sot"
+STORAGE: SnapshotStorage = None
 
 
 class NotASubvolume(ValueError):
@@ -85,13 +83,12 @@ class SnapshotStorage:
                 "CREATE INDEX IF NOT EXISTS idx_snapshot_volume_id ON snapshots (volume_id)"
             )
 
-    def load(self, obj: "Snapshot" | "Volume", force = False):
+    def load(self, obj: "Snapshot" | "Volume", force=False):
         # object is already loaded
         if obj.id is not None and not force:
             return
 
         if isinstance(obj, Volume):
-
             with self._conn:
                 row = self._conn.execute(
                     "SELECT id FROM volumes WHERE path = ?", (str(obj.path),)
@@ -206,16 +203,16 @@ class Volume:
         # escape volume name
         self.name = escape(self.path)
         # path of volume in the filesystem
-        self.realpath = config.STORAGE.root / self.path
+        self.realpath = STORAGE.root / self.path
         # subvolume storage path
-        self.storage = config.STORAGE.path / self.name
+        self.storage = STORAGE.path / self.name
 
         if exists:
             self.assert_is_volume()
 
     @property
     def snapshots(self) -> dict[str, "Snapshot"]:
-        return config.STORAGE.snapshots(self)
+        return STORAGE.snapshots(self)
 
     def assert_is_volume(self):
         path = self.realpath
@@ -233,7 +230,9 @@ class Volume:
 
 
 class Snapshot:
-    def __init__(self, volume: Volume, name: str, time: float = 0, id: int = None) -> None:
+    def __init__(
+        self, volume: Volume, name: str, time: float = 0, id: int = None
+    ) -> None:
         if name is None:
             while (volume.storage / (name := self.generate_name())).exists():
                 pass
@@ -254,13 +253,13 @@ class Snapshot:
         if new_name in self.volume.snapshots:
             raise SnapshotExists(new_name)
 
-        config.STORAGE.unregister(self)
+        STORAGE.unregister(self)
         self._name = new_name
         self.readonly = False
         old_path = self.path
         self.path = self.volume.storage / self._name
         shutil.move(old_path, self.path)
-        config.STORAGE.register(self)
+        STORAGE.register(self)
 
     @property
     def readonly(self) -> bool:
@@ -275,13 +274,13 @@ class Snapshot:
         btrfsutil.create_snapshot(
             str(self.volume.realpath), str(self.path), read_only=True
         )
-        config.STORAGE.register(self)
+        STORAGE.register(self)
 
     def delete(self) -> None:
         path = str(self.path)
         self.readonly = False
         btrfsutil.delete_subvolume(path)
-        config.STORAGE.unregister(self)
+        STORAGE.unregister(self)
 
     @property
     def strtime(self):

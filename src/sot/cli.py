@@ -9,12 +9,12 @@ from btrfsutil import BtrfsUtilError
 import click
 import click.shell_completion
 
+from sot import btrfs
 from sot.btrfs import (
     Snapshot,
     SnapshotExists,
     SnapshotStorage,
     Volume,
-    config,
 )
 from sot import args
 
@@ -31,7 +31,7 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 )
 def cli(root: Path):
     """BTRFS snapshots management."""
-    config.STORAGE = SnapshotStorage(root)
+    btrfs.STORAGE = SnapshotStorage(root)
 
 
 @cli.command()
@@ -67,13 +67,13 @@ def list_(volume: Volume, volume_only: bool):
 
     if volume_only:
         click.echo("Listing all volumes...")
-        for v in config.STORAGE.volumes():
+        for v in btrfs.STORAGE.volumes():
             click.echo(styled(v))
         return
     elif volume is None:
         click.echo("Listing all snapshots...")
         volumes_snapshots = {
-            v: v.snapshots for v in config.STORAGE.volumes()
+            v: v.snapshots for v in btrfs.STORAGE.volumes()
         }
     else:
         volumes_snapshots = {volume: volume.snapshots}
@@ -175,7 +175,7 @@ def path(volume, snapshot: Snapshot):
 @cli.command()
 def rebuild_db():
     """Rebuild the database from .sot storage and recover creation times if possible."""
-    config.STORAGE.rebuild_database()
+    btrfs.STORAGE.rebuild_database()
     click.echo("Database rebuilt successfully.")
 
 
@@ -188,10 +188,10 @@ def styled(obj: Snapshot | Volume) -> str:
 
 def main():
     # Workaround: click doesn't call cli() in completion mode, so we need to set
-    # config.STORAGE here
+    # btrfs.STORAGE here
     if "_SOT_COMPLETE" in os.environ:
-        config.STORAGE = SnapshotStorage()
+        btrfs.STORAGE = SnapshotStorage()
     try:
         cli()
     finally:
-        del config.STORAGE
+        del btrfs.STORAGE

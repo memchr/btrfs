@@ -3,7 +3,6 @@ from typing import Any, List
 import click
 
 from sot import btrfs
-from sot.btrfs import config
 
 
 class Volume(click.ParamType):
@@ -37,7 +36,7 @@ class Volume(click.ParamType):
         from click.shell_completion import CompletionItem
 
         if ctx.command.name not in ("create"):
-            return [CompletionItem(v.path) for v in config.STORAGE.volumes()]
+            return [CompletionItem(v.path) for v in btrfs.STORAGE.volumes()]
         return [CompletionItem(incomplete, type="dir")]
 
 
@@ -66,7 +65,7 @@ class Snapshot(click.ParamType):
             force = ctx.params.get("force", False)
             snapshot = btrfs.Snapshot(name=value, volume=volume)
             if self.exists:
-                config.STORAGE.load(snapshot)
+                btrfs.STORAGE.load(snapshot)
             else:
                 snapshot.time = time.time()
                 if not force:
