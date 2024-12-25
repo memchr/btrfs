@@ -64,7 +64,7 @@ class SnapshotStorage:
             self._conn.execute("""
                 CREATE TABLE IF NOT EXISTS volumes (
                     id INTEGER PRIMARY KEY,
-                    name TEXT UNIQUE
+                    path TEXT UNIQUE
                 )
             """)
             self._conn.execute("""
@@ -77,15 +77,15 @@ class SnapshotStorage:
                     UNIQUE (volume_id, name)
                 )
             """)
-            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_volume_name ON volumes (name)")
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_volume_path ON volumes (path)")
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_volume_id ON snapshots (volume_id)")
 
 
     def _volume_id(self, volume: Volume) -> int:
         with self._conn:
             row = self._conn.execute(
-                "SELECT id FROM volumes WHERE name = ?",
-                (volume.name,)
+                "SELECT id FROM volumes WHERE path = ?",
+                (str(volume.relative_path),)
             ).fetchone()
         return row[0] if row is not None else None
 
@@ -126,8 +126,8 @@ class SnapshotStorage:
         elif isinstance(obj, Volume):
             with self._conn:
                 self._conn.execute(
-                    "INSERT OR IGNORE INTO volumes (name) VALUES (?)",
-                    (obj.name,)
+                    "INSERT OR IGNORE INTO volumes (path) VALUES (?)",
+                    (str(obj.relative_path),)
                 )
 
     def snapshots(self, volume: "Volume") -> dict[str, Snapshot]:
@@ -154,24 +154,27 @@ class SnapshotStorage:
     def volumes(self):
         with self._conn:
             rows = self._conn.execute(
-                "SELECT name FROM volumes"
+                "SELECT path FROM volumes"
             ).fetchall()
         for row in rows:
-            yield Volume(name=row[0])
+            yield Volume(row[0])
 
     def __del__(self):
         self._conn.close()
 
 
 class Volume:
-    def __init__(self, path: Path = None, name=None, exists=False) -> None:
+    def __init__(self, path: Path = None, exists=False) -> None:
         """
         Relative volume path is interepted as relative path to SubvolumeStorage
         if it cannot be found in current directory
         """
-        path = ensure_path(path if name is None else unescape(name))
+        path = ensure_path(path)
+        # absolute path of the volume
         self.path = path.resolve() if path.exists() else config.STORAGE.root / path
+        # relative path of the volume to the storage root
         self.relative_path = self.path.relative_to(config.STORAGE.root)
+        # escaped name of the volume
         self.name = escape(self.relative_path)
 
         self.storage = config.STORAGE.path / self.name
