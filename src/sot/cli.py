@@ -57,7 +57,13 @@ def init():
     help="Annotation for the snapshot",
 )
 @click.option("-e", "edit_annotation", is_flag=True, help="Edit annotation in $EDITOR")
-def create(volume: Volume, snapshot: Snapshot, force: bool, annotation: str, edit_annotation: bool):
+def create(
+    volume: Volume,
+    snapshot: Snapshot,
+    force: bool,
+    annotation: str,
+    edit_annotation: bool,
+):
     """Create new snapshot."""
     if force and snapshot.name in volume.snapshots:
         volume.snapshots[snapshot.name].delete()
@@ -85,9 +91,7 @@ def list_(volume: Volume, volume_only: bool):
         return
     elif volume is None:
         click.echo("Listing all snapshots...")
-        volumes_snapshots = {
-            v: v.snapshots for v in btrfs.STORAGE.volumes()
-        }
+        volumes_snapshots = {v: v.snapshots for v in btrfs.STORAGE.volumes()}
     else:
         volumes_snapshots = {volume: volume.snapshots}
 
@@ -151,7 +155,9 @@ def delete(
         elif keep is not None:
             snapshots = volume.snapshots.values()[:-keep]
         elif before is not None:
-            snapshots = [s for s in volume.snapshots.values() if s.time < before.timestamp()]
+            snapshots = [
+                s for s in volume.snapshots.values() if s.time < before.timestamp()
+            ]
         if len(snapshots) == 0:
             raise click.UsageError("No snapshots available for deletion.")
     if dry_run:
