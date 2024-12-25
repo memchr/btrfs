@@ -56,6 +56,11 @@ class SnapshotStorage:
         self._db = self.path / "index.db"
         self._conn = sqlite3.connect(self._db)
         self._conn.row_factory = sqlite3.Row
+        self._init_db()
+
+    def _init_db(self):
+        with self._conn:
+            self._conn.execute('PRAGMA foreign_keys = ON')
         self._create_tables()
 
     def _create_tables(self):
@@ -72,7 +77,7 @@ class SnapshotStorage:
                     volume_id INTEGER NOT NULL,
                     name TEXT,
                     time REAL,
-                    FOREIGN KEY (volume_id) REFERENCES volumes (id),
+                    FOREIGN KEY (volume_id) REFERENCES volumes (id) ON DELETE CASCADE,
                     UNIQUE (volume_id, name)
                 )
             """)
@@ -137,9 +142,6 @@ class SnapshotStorage:
                 if obj.id is None:
                     return
 
-                self._conn.execute(
-                    "DELETE FROM snapshots WHERE volume_id = ?", (obj.id,)
-                )
                 self._conn.execute("DELETE FROM volumes WHERE id = ?", (obj.id,))
 
     def snapshots(self, volume: "Volume") -> dict[str, Snapshot]:
@@ -209,6 +211,10 @@ class Volume:
 
         if exists:
             self.assert_is_volume()
+
+    def remove_storage(self):
+        self.storage.rmdir()
+        STORAGE.unregister(self)
 
     @property
     def snapshots(self) -> dict[str, "Snapshot"]:
