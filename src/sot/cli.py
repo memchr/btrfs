@@ -240,6 +240,12 @@ def switch(volume: Volume, snapshot: Snapshot):
     snapshot = volume.switch(snapshot)
     click.echo(f"Volume '{styled(volume)}' switched to snapshot '{styled(snapshot)}'")
 
+@cli.command()
+@args.volume(exists=True)
+def rm(volume: Volume):
+    """Remove arbitrary volume"""
+    volume.delete()
+
 
 def styled(obj: Snapshot | Volume) -> str:
     if isinstance(obj, Snapshot):

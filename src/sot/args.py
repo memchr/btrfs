@@ -35,7 +35,7 @@ class Volume(click.ParamType):
     ) -> List[click.shell_completion.CompletionItem]:
         from click.shell_completion import CompletionItem
 
-        if ctx.command.name not in ("create"):
+        if ctx.command.name not in ("create", "rm"):
             return [CompletionItem(v.path) for v in btrfs.STORAGE.volumes()]
         return [CompletionItem(incomplete, type="dir")]
 
