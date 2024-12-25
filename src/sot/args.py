@@ -61,13 +61,15 @@ class Snapshot(click.ParamType):
             return value
         try:
             volume = ctx.params["volume"]
+            force = ctx.params.get("force", False)
             if self.exists:
                 return config.STORAGE.find_snapshot(
                     btrfs.Snapshot(name=value, volume=volume)
                 )
             else:
                 snapshot = btrfs.Snapshot(name=value, volume=volume, time=time.time())
-                snapshot.assert_not_exists()
+                if not force:
+                    snapshot.assert_not_exists()
                 return snapshot
         except (
             btrfs.NotASubvolume,

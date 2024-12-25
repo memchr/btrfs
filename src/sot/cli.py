@@ -42,11 +42,19 @@ def init():
 @cli.command()
 @args.volume(exists=True)
 @args.snapshot(exists=False)
-def create(volume: Volume, snapshot: Snapshot):
+@click.option(
+    "-f",
+    "--force",
+    is_flag=True,
+    help="Replace existing snapshot with the same name",
+)
+def create(volume: Volume, snapshot: Snapshot, force: bool):
     """Create new snapshot."""
+    if force and snapshot.name in volume.snapshots:
+        volume.snapshots[snapshot.name].delete()
     snapshot.create()
     click.echo(
-        f"Snapshot '{click.style(volume.name, fg="green", bold=True)}/{click.style(snapshot.name, fg="blue")}' created"
+        f"Snapshot '{click.style(volume.name, fg='green', bold=True)}/{click.style(snapshot.name, fg='blue')}' created"
     )
 
 
