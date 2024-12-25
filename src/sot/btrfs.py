@@ -51,8 +51,8 @@ class SnapshotStorage:
                 root = root.parent
         else:
             root = ensure_path(root).resolve()
-        self.root = root
-        self.path = root / config.SNAPSHOT_DIR
+        self.root: Path = root
+        self.path: Path = root / config.SNAPSHOT_DIR
         self._db = self.path / "index.db"
         self._conn = sqlite3.connect(self._db)
         self._conn.row_factory = sqlite3.Row
@@ -212,14 +212,14 @@ class Volume:
             path {Path} -- Path to the volume, relative to the storage root
             exists {bool} -- Check if the volume exists
         """
-        self.path = ensure_path(path)
+        self.path: Path = ensure_path(path)
         self.id: int | None = id
         # escape volume name
-        self.name = escape(self.path)
+        self.name: str = escape(self.path)
         # path of volume in the filesystem
-        self.realpath = STORAGE.root / self.path
+        self.realpath: Path = STORAGE.root / self.path
         # subvolume storage path
-        self.storage = STORAGE.path / self.name
+        self.storage: Path = STORAGE.path / self.name
 
         if exists:
             self.assert_is_volume()
@@ -260,11 +260,11 @@ class Snapshot:
             while (volume.storage / (name := self.generate_name())).exists():
                 pass
 
-        self.volume = volume
+        self.volume: Volume = volume
         self.path: Path
         self._name = name
-        self.path = self.volume.storage / self.name
-        self.time = time
+        self.path: Path = self.volume.storage / self.name
+        self.time: float = time
         self.id: int | None = id
         self.annotation: str | None = annotation
 
