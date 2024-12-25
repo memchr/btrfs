@@ -7,7 +7,7 @@ import shutil
 import btrfsutil
 import sqlite3
 
-from sot.utils import ensure_path, escape, unescape
+from sot.utils import ensure_path, escape
 
 
 class config:
@@ -70,120 +70,124 @@ class SnapshotStorage:
             self._conn.execute("""
                 CREATE TABLE IF NOT EXISTS snapshots (
                     id INTEGER PRIMARY KEY,
-                    volume_id INTEGER,
+                    volume_id INTEGER NOT NULL,
                     name TEXT,
                     time REAL,
                     FOREIGN KEY (volume_id) REFERENCES volumes (id),
                     UNIQUE (volume_id, name)
                 )
             """)
-            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_volume_path ON volumes (path)")
-            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_volume_id ON snapshots (volume_id)")
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_volume_path ON volumes (path)"
+            )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_snapshot_volume_id ON snapshots (volume_id)"
+            )
 
+    def load(self, obj: "Snapshot" | "Volume"):
+        if isinstance(obj, Volume):
+            # volume is already loaded
+            if obj.id is not None:
+                return
 
-    def _volume_id(self, volume: Volume) -> int:
-        with self._conn:
-            row = self._conn.execute(
-                "SELECT id FROM volumes WHERE path = ?",
-                (str(volume.relative_path),)
-            ).fetchone()
-        return row[0] if row is not None else None
-
-    def unregister(self, obj: "Snapshot" | "Volume"):
+            with self._conn:
+                row = self._conn.execute(
+                    "SELECT id FROM volumes WHERE path = ?", (str(obj.path),)
+                ).fetchone()
+                if row is not None:
+                    obj.id = row[0]
         if isinstance(obj, Snapshot):
+            self.load(obj.volume)
             with self._conn:
-                volume_id = self._volume_id(obj.volume)
-                if volume_id is  None:
-                    return
-
-                self._conn.execute(
-                    "DELETE FROM snapshots WHERE volume_id = ? AND name = ?",
-                    (volume_id, obj.name)
-                )
-        elif isinstance(obj, Volume):
-            with self._conn:
-                volume_id = self._volume_id(obj)
-                if volume_id is  None:
-                    return
-
-                self._conn.execute(
-                    "DELETE FROM snapshots WHERE volume_id = ?",
-                    (volume_id,)
-                )
-                self._conn.execute(
-                    "DELETE FROM volumes WHERE id = ?",
-                    (volume_id,)
-                )
+                row = self._conn.execute(
+                    "SELECT time FROM snapshots WHERE volume_id = ? AND name = ?",
+                    (obj.volume.id, obj.name),
+                ).fetchone()
+                if row is None:
+                    raise SnapshotNotFound(obj)
+                obj.time = row[0]
 
     def register(self, obj: "Snapshot" | "Volume"):
         if isinstance(obj, Snapshot):
+            self.register(obj.volume)
+            self.load(obj.volume)
+
             with self._conn:
-                volume_id = self._volume_id(obj.volume)
                 self._conn.execute(
                     "INSERT OR REPLACE INTO snapshots (volume_id, name, time) VALUES (?, ?, ?)",
-                    (volume_id, obj.name, obj.time)
+                    (obj.volume.id, obj.name, obj.time),
                 )
         elif isinstance(obj, Volume):
             with self._conn:
                 self._conn.execute(
-                    "INSERT OR IGNORE INTO volumes (path) VALUES (?)",
-                    (str(obj.relative_path),)
+                    "INSERT OR IGNORE INTO volumes (path) VALUES (?)", (str(obj.path),)
                 )
 
+    def unregister(self, obj: "Snapshot" | "Volume"):
+        if isinstance(obj, Snapshot):
+            self.load(obj.volume)
+
+            with self._conn:
+                self._conn.execute(
+                    "DELETE FROM snapshots WHERE volume_id = ? AND name = ?",
+                    (obj.volume.id, obj.name),
+                )
+        elif isinstance(obj, Volume):
+            with self._conn:
+                if obj.id is None:
+                    return
+
+                self._conn.execute(
+                    "DELETE FROM snapshots WHERE volume_id = ?", (obj.id,)
+                )
+                self._conn.execute("DELETE FROM volumes WHERE id = ?", (obj.id,))
+
     def snapshots(self, volume: "Volume") -> dict[str, Snapshot]:
-        volume_id = self._volume_id(volume)
+        self.load(volume)
         with self._conn:
             rows = self._conn.execute(
-                "SELECT name, time FROM snapshots WHERE volume_id = ?",
-                (volume_id,)
+                "SELECT name, time FROM snapshots WHERE volume_id = ?", (volume.id,)
             ).fetchall()
         return {name: Snapshot(volume, name, time) for name, time in rows}
 
-    def find_snapshot(self, snapshot) -> Snapshot:
-        volume_id = self._volume_id(snapshot.volume)
-        with self._conn:
-            row = self._conn.execute(
-                "SELECT time FROM snapshots WHERE volume_id = ? AND name = ?",
-                (volume_id, snapshot.name)
-            ).fetchone()
-        if row is None:
-            raise SnapshotNotFound(snapshot)
-        snapshot.time = row[0]
-        return snapshot
-
     def volumes(self):
         with self._conn:
-            rows = self._conn.execute(
-                "SELECT path FROM volumes"
-            ).fetchall()
-        for row in rows:
-            yield Volume(row[0])
+            rows = self._conn.execute("SELECT id, path FROM volumes").fetchall()
+        for id, path in rows:
+            yield Volume(path=path, id=id)
 
     def __del__(self):
         self._conn.close()
 
 
 class Volume:
-    def __init__(self, path: Path = None, exists=False) -> None:
+    def __init__(self, path: Path = None, exists=False, id: int = None) -> None:
         """
         Relative volume path is interepted as relative path to SubvolumeStorage
         if it cannot be found in current directory
         """
         path = ensure_path(path)
-        # absolute path of the volume
-        self.path = path.resolve() if path.exists() else config.STORAGE.root / path
-        # relative path of the volume to the storage root
-        self.relative_path = self.path.relative_to(config.STORAGE.root)
-        # escaped name of the volume
-        self.name = escape(self.relative_path)
+        path = path.resolve() if path.exists() else config.STORAGE.root / path
 
+        # relative path of the volume to the storage root
+        self.path = path.relative_to(config.STORAGE.root)
+        # escaped name of the volume
+        self.name = escape(self.path)
+        # absolute path of the volume
+        self.path_absolute = path
+
+        self.id: int = id
         self.storage = config.STORAGE.path / self.name
 
         if exists:
             self.assert_is_volume()
 
+    @property
+    def snapshots(self) -> dict[str, "Snapshot"]:
+        return config.STORAGE.snapshots(self)
+
     def assert_is_volume(self):
-        path = self.path
+        path = self.path_absolute
         if not path.exists():
             raise SubvolumeNotFound(path)
         if not btrfsutil.is_subvolume(str(path)):
@@ -192,10 +196,6 @@ class Volume:
     def assert_has_snapshots(self):
         if not self.storage.exists():
             raise NoSnapshotsError(self)
-
-    @property
-    def snapshots(self) -> dict[str, "Snapshot"]:
-        return config.STORAGE.snapshots(self)
 
     def __repr__(self) -> str:
         return str(self.path)
@@ -212,11 +212,6 @@ class Snapshot:
         self._name = name
         self.path = self.volume.storage / self.name
         self.time = time
-
-    def create(self) -> None:
-        self.path.parent.mkdir(exist_ok=True, parents=True)
-        btrfsutil.create_snapshot(str(self.volume.path), str(self.path), read_only=True)
-        config.STORAGE.register(self)
 
     @property
     def name(self) -> str:
@@ -243,9 +238,12 @@ class Snapshot:
     def readonly(self, read_only: bool):
         btrfsutil.set_subvolume_read_only(str(self.path), read_only=read_only)
 
-    def assert_not_exists(self):
-        if self.path.exists():
-            raise SnapshotExists(self)
+    def create(self) -> None:
+        self.path.parent.mkdir(exist_ok=True, parents=True)
+        btrfsutil.create_snapshot(
+            str(self.volume.path_absolute), str(self.path), read_only=True
+        )
+        config.STORAGE.register(self)
 
     def delete(self) -> None:
         path = str(self.path)
@@ -260,6 +258,10 @@ class Snapshot:
     @staticmethod
     def generate_name():
         return hashlib.sha256(os.urandom(16)).hexdigest()[:8]
+
+    def assert_not_exists(self):
+        if self.path.exists():
+            raise SnapshotExists(self)
 
     def __repr__(self) -> str:
         return self.name

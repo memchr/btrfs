@@ -176,7 +176,7 @@ def styled(obj: Snapshot | Volume) -> str:
     if isinstance(obj, Snapshot):
         return click.style(obj.name, fg="yellow")
     elif isinstance(obj, Volume):
-        return click.style(obj.relative_path, fg="green", bold=True)
+        return click.style(obj.path, fg="green", bold=True)
 
 
 def main():
