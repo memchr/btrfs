@@ -11,12 +11,14 @@ import click.shell_completion
 
 from sot import btrfs
 from sot.btrfs import (
+    STORAGE,
     Snapshot,
     SnapshotExists,
     SnapshotStorage,
     Volume,
 )
 from sot import args
+from sot import utils
 
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
@@ -48,10 +50,22 @@ def init():
     is_flag=True,
     help="Replace existing snapshot with the same name",
 )
-def create(volume: Volume, snapshot: Snapshot, force: bool):
+@click.option(
+    "-m",
+    "--annotation",
+    type=str,
+    default=None,
+    help="Annotation for the snapshot",
+)
+@click.option("-e", "edit_annotation", is_flag=True, help="Edit annotation in $EDITOR")
+def create(volume: Volume, snapshot: Snapshot, force: bool, annotation: str, edit_annotation: bool):
     """Create new snapshot."""
     if force and snapshot.name in volume.snapshots:
         volume.snapshots[snapshot.name].delete()
+    if edit_annotation:
+        snapshot.annotation = utils.edit_annotation(annotation)
+    else:
+        snapshot.annotation = annotation
     snapshot.create()
     click.echo(
         f"Snapshot '{click.style(volume.name, fg='green', bold=True)}/{click.style(snapshot.name, fg='blue')}' created"
@@ -82,7 +96,11 @@ def list_(volume: Volume, volume_only: bool):
     for volume, snapshots in volumes_snapshots.items():
         click.echo(styled(volume))
         for snapshot in snapshots.values():
-            click.echo(f"  {styled(snapshot):<{leftpad}} {snapshot.strtime}")
+            if snapshot.annotation is not None:
+                buf = f"{styled(snapshot):<18} ({snapshot.annotation})"
+            else:
+                buf = f"{styled(snapshot)}"
+            click.echo(f"  {buf:<{leftpad}} {click.style(snapshot.strtime, fg='cyan')}")
 
 
 class _DateTime(click.DateTime):
@@ -177,6 +195,20 @@ def rebuild_db():
     """Rebuild the database from .sot storage and recover creation times if possible."""
     btrfs.STORAGE.rebuild_database()
     click.echo("Database rebuilt successfully.")
+
+
+@cli.command()
+@args.volume(exists=False)
+@args.snapshot()
+@click.argument("new_annotation", required=False, type=str)
+def annotate(volume: Volume, snapshot: Snapshot, new_annotation: str):
+    """Annotate snapshot"""
+    if new_annotation is None:
+        new_annotation = utils.edit_annotation(snapshot.annotation)
+    snapshot.annotation = new_annotation
+    btrfs.STORAGE.unregister(snapshot)
+    btrfs.STORAGE.register(snapshot)
+    click.echo(f"Snapshot '{styled(snapshot)}' annotated with: {new_annotation}")
 
 
 def styled(obj: Snapshot | Volume) -> str:

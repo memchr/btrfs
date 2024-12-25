@@ -60,7 +60,7 @@ class SnapshotStorage:
 
     def _init_db(self):
         with self._conn:
-            self._conn.execute('PRAGMA foreign_keys = ON')
+            self._conn.execute("PRAGMA foreign_keys = ON")
         self._create_tables()
 
     def _create_tables(self):
@@ -77,6 +77,7 @@ class SnapshotStorage:
                     volume_id INTEGER NOT NULL,
                     name TEXT,
                     time REAL,
+                    annotation TEXT,
                     FOREIGN KEY (volume_id) REFERENCES volumes (id) ON DELETE CASCADE,
                     UNIQUE (volume_id, name)
                 )
@@ -104,13 +105,14 @@ class SnapshotStorage:
             self.load(obj.volume)
             with self._conn:
                 row = self._conn.execute(
-                    "SELECT id, time FROM snapshots WHERE volume_id = ? AND name = ?",
+                    "SELECT id, time, annotation FROM snapshots WHERE volume_id = ? AND name = ?",
                     (obj.volume.id, obj.name),
                 ).fetchone()
                 if row is None:
                     raise SnapshotNotFound(obj)
                 obj.time = row["time"]
                 obj.id = row["id"]
+                obj.annotation = row["annotation"]
 
     def register(self, obj: "Snapshot" | "Volume"):
         if isinstance(obj, Snapshot):
@@ -119,8 +121,8 @@ class SnapshotStorage:
 
             with self._conn:
                 self._conn.execute(
-                    "INSERT OR REPLACE INTO snapshots (volume_id, name, time) VALUES (?, ?, ?)",
-                    (obj.volume.id, obj.name, obj.time),
+                    "INSERT OR REPLACE INTO snapshots (volume_id, name, time, annotation) VALUES (?, ?, ?, ?)",
+                    (obj.volume.id, obj.name, obj.time, obj.annotation),
                 )
         elif isinstance(obj, Volume):
             with self._conn:
@@ -134,8 +136,8 @@ class SnapshotStorage:
 
             with self._conn:
                 self._conn.execute(
-                    "DELETE FROM snapshots WHERE volume_id = ? AND name = ?",
-                    (obj.volume.id, obj.name),
+                    "DELETE FROM snapshots WHERE volume_id = ? AND (name = ? OR id = ?)",
+                    (obj.volume.id, obj.name, obj.id),
                 )
         elif isinstance(obj, Volume):
             with self._conn:
@@ -148,9 +150,19 @@ class SnapshotStorage:
         self.load(volume)
         with self._conn:
             rows = self._conn.execute(
-                "SELECT name, time FROM snapshots WHERE volume_id = ?", (volume.id,)
+                "SELECT id, name, time, annotation FROM snapshots WHERE volume_id = ?",
+                (volume.id,),
             ).fetchall()
-        return {name: Snapshot(volume, name, time) for name, time in rows}
+        return {
+            row["name"]: Snapshot(
+                volume=volume,
+                id=row["id"],
+                name=row["name"],
+                time=row["time"],
+                annotation=row["annotation"],
+            )
+            for row in rows
+        }
 
     def volumes(self):
         with self._conn:
@@ -237,7 +249,12 @@ class Volume:
 
 class Snapshot:
     def __init__(
-        self, volume: Volume, name: str, time: float = 0, id: int = None
+        self,
+        volume: Volume,
+        name: str,
+        time: float = 0,
+        id: int = None,
+        annotation: str = None,
     ) -> None:
         if name is None:
             while (volume.storage / (name := self.generate_name())).exists():
@@ -249,6 +266,7 @@ class Snapshot:
         self.path = self.volume.storage / self.name
         self.time = time
         self.id: int | None = id
+        self.annotation: str | None = annotation
 
     @property
     def name(self) -> str:
