@@ -306,7 +306,7 @@ class Snapshot:
         btrfsutil.delete_subvolume(path)
         STORAGE.unregister(self)
 
-    def load_to_workdir(self, workdir: Path):
+    def load_to_path(self, workdir: Path):
         """Create a read-write snapshot of snapshot to workdir."""
         btrfsutil.create_snapshot(str(self.path), str(workdir), read_only=False)
 

@@ -216,8 +216,10 @@ def load(volume: Volume, snapshot: Snapshot, workdir: Path):
     """Create a read-write snapshot of snapshot to workdir."""
     if workdir.exists():
         raise click.UsageError(f"Workdir '{workdir}' already exists")
-    snapshot.load_to_workdir(workdir)
-    click.echo(f"Snapshot '{styled(snapshot)}' loaded to '{click.style(str(workdir), fg='green')}'")
+    snapshot.load_to_path(workdir)
+    click.echo(
+        f"Snapshot '{styled(snapshot)}' loaded to '{click.style(str(workdir), fg='green')}'"
+    )
 
 
 def styled(obj: Snapshot | Volume) -> str:
