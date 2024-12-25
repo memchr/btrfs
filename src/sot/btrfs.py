@@ -306,6 +306,10 @@ class Snapshot:
         btrfsutil.delete_subvolume(path)
         STORAGE.unregister(self)
 
+    def load_to_workdir(self, workdir: Path):
+        """Create a read-write snapshot of snapshot to workdir."""
+        btrfsutil.create_snapshot(str(self.path), str(workdir), read_only=False)
+
     @property
     def strtime(self):
         return datetime.fromtimestamp(self.time).strftime(config.DATETIME_FORMAT)

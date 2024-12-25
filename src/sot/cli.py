@@ -11,7 +11,6 @@ import click.shell_completion
 
 from sot import btrfs
 from sot.btrfs import (
-    STORAGE,
     Snapshot,
     SnapshotExists,
     SnapshotStorage,
@@ -207,6 +206,18 @@ def annotate(volume: Volume, snapshot: Snapshot, new_annotation: str):
     btrfs.STORAGE.unregister(snapshot)
     btrfs.STORAGE.register(snapshot)
     click.echo(f"Snapshot '{styled(snapshot)}' annotated with: {new_annotation}")
+
+
+@cli.command()
+@args.volume(exists=False)
+@args.snapshot()
+@click.argument("workdir", type=click.Path(file_okay=False, path_type=Path))
+def load(volume: Volume, snapshot: Snapshot, workdir: Path):
+    """Create a read-write snapshot of snapshot to workdir."""
+    if workdir.exists():
+        raise click.UsageError(f"Workdir '{workdir}' already exists")
+    snapshot.load_to_workdir(workdir)
+    click.echo(f"Snapshot '{styled(snapshot)}' loaded to '{click.style(str(workdir), fg='green')}'")
 
 
 def styled(obj: Snapshot | Volume) -> str:
