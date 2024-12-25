@@ -152,9 +152,7 @@ def delete(
         elif keep is not None:
             snapshots = volume.snapshots.values()[:-keep]
         elif before is not None:
-            raise NotImplementedError
-            # b = before.strftime(DATETIME_FORMAT)
-            # snapshots = [name for name in volume.snapshots if name < b]
+            snapshots = [s for s in volume.snapshots.values() if s.time < before.timestamp()]
         if len(snapshots) == 0:
             raise click.UsageError("No snapshots available for deletion.")
     if dry_run:
