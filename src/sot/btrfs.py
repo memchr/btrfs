@@ -57,6 +57,7 @@ class SnapshotStorage:
         self.path = root / config.SNAPSHOT_DIR
         self._db = self.path / "index.db"
         self._conn = sqlite3.connect(self._db)
+        self._conn.row_factory = sqlite3.Row
         self._create_tables()
 
     def _create_tables(self):
@@ -95,17 +96,18 @@ class SnapshotStorage:
                     "SELECT id FROM volumes WHERE path = ?", (str(obj.path),)
                 ).fetchone()
                 if row is not None:
-                    obj.id = row[0]
+                    obj.id = row["id"]
         if isinstance(obj, Snapshot):
             self.load(obj.volume)
             with self._conn:
                 row = self._conn.execute(
-                    "SELECT time FROM snapshots WHERE volume_id = ? AND name = ?",
+                    "SELECT id, time FROM snapshots WHERE volume_id = ? AND name = ?",
                     (obj.volume.id, obj.name),
                 ).fetchone()
                 if row is None:
                     raise SnapshotNotFound(obj)
-                obj.time = row[0]
+                obj.time = row["time"]
+                obj.id = row["id"]
 
     def register(self, obj: "Snapshot" | "Volume"):
         if isinstance(obj, Snapshot):
@@ -202,7 +204,7 @@ class Volume:
 
 
 class Snapshot:
-    def __init__(self, volume: Volume, name: str, time: float = 0) -> None:
+    def __init__(self, volume: Volume, name: str, time: float = 0, id: int = None) -> None:
         if name is None:
             while (volume.storage / (name := self.generate_name())).exists():
                 pass
@@ -212,6 +214,7 @@ class Snapshot:
         self._name = name
         self.path = self.volume.storage / self.name
         self.time = time
+        self.id: int | None = id
 
     @property
     def name(self) -> str:
