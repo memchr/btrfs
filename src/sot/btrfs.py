@@ -316,7 +316,7 @@ class Snapshot:
 
     @staticmethod
     def generate_name():
-        return hashlib.sha256(os.urandom(16)).hexdigest()[:8]
+        return hashlib.sha256(os.urandom(16)).hexdigest()[:7]
 
     def assert_not_exists(self):
         if self.path.exists():
