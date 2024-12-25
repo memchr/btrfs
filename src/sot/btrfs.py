@@ -173,7 +173,8 @@ class Volume:
         self.path = path.resolve() if path.exists() else config.STORAGE.root / path
         self.relative_path = self.path.relative_to(config.STORAGE.root)
         self.name = escape(self.relative_path)
-        self.snapshots_path = config.STORAGE.path / self.name
+
+        self.storage = config.STORAGE.path / self.name
 
         if exists:
             self.assert_is_volume()
@@ -186,7 +187,7 @@ class Volume:
             raise NotASubvolume(path)
 
     def assert_has_snapshots(self):
-        if not self.snapshots_path.exists():
+        if not self.storage.exists():
             raise NoSnapshotsError(self)
 
     @property
@@ -200,13 +201,13 @@ class Volume:
 class Snapshot:
     def __init__(self, volume: Volume, name: str, time: float = 0) -> None:
         if name is None:
-            while (volume.snapshots_path / (name := self.generate_name())).exists():
+            while (volume.storage / (name := self.generate_name())).exists():
                 pass
 
         self.volume = volume
         self.path: Path
         self._name = name
-        self.path = self.volume.snapshots_path / self.name
+        self.path = self.volume.storage / self.name
         self.time = time
 
     def create(self) -> None:
@@ -227,7 +228,7 @@ class Snapshot:
         self._name = new_name
         self.readonly = False
         old_path = self.path
-        self.path = self.volume.snapshots_path / self._name
+        self.path = self.volume.storage / self._name
         shutil.move(old_path, self.path)
         config.STORAGE.register(self)
 

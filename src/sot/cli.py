@@ -158,7 +158,7 @@ def delete(
             click.echo(f"Would delete: '{vol_styled}/{styled(s)}'")
     if all or len(volume.snapshots) == 0:
         if not dry_run:
-            volume.snapshots_path.rmdir()
+            volume.storage.rmdir()
             click.echo(f"Removed snapshots dir for subvolume {vol_styled}")
         else:
             click.echo(f"Would remove snapshots dir for subvolume {vol_styled}")
