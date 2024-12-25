@@ -184,4 +184,7 @@ def main():
     # config.STORAGE here
     if "_SOT_COMPLETE" in os.environ:
         config.STORAGE = SnapshotStorage()
-    cli()
+    try:
+        cli()
+    finally:
+        del config.STORAGE

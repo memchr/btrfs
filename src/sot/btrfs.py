@@ -157,6 +157,9 @@ class SnapshotStorage:
         for row in rows:
             yield Volume(name=row[0])
 
+    def __del__(self):
+        self._conn.close()
+
 
 class Volume:
     def __init__(self, path: Path = None, name=None, exists=False) -> None:
