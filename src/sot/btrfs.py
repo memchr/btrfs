@@ -149,7 +149,7 @@ class SnapshotStorage:
         snapshot.time = row[0]
         return snapshot
 
-    def iter(self):
+    def volumes(self):
         with self._conn:
             rows = self._conn.execute(
                 "SELECT name FROM volumes"
@@ -186,9 +186,6 @@ class Volume:
 
     @property
     def snapshots(self) -> dict[str, "Snapshot"]:
-        path = self.snapshots_path
-        if not path.exists():
-            return dict()
         return config.STORAGE.snapshots(self)
 
     def __repr__(self) -> str:

@@ -38,7 +38,7 @@ class Volume(click.ParamType):
         from sot.utils import unescape
 
         if ctx.command.name not in ("create"):
-            volumes = config.STORAGE.iter()
+            volumes = config.STORAGE.volumes()
             return [CompletionItem(unescape(volume.name)) for volume in volumes if incomplete in unescape(volume.name) and volume.is_dir()]
         return [CompletionItem(incomplete, type="dir")]
 

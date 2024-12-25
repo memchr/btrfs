@@ -67,13 +67,13 @@ def list_(volume: Volume, volume_only: bool):
 
     if volume_only:
         click.echo("Listing all volumes...")
-        for v in [Volume(name=d.name) for d in config.STORAGE.iter()]:
+        for v in config.STORAGE.volumes():
             click.echo(styled(v))
         return
     elif volume is None:
         click.echo("Listing all snapshots...")
         volumes_snapshots = {
-            (v := Volume(name=d.name)): v.snapshots for d in config.STORAGE.iter()
+            v: v.snapshots for v in config.STORAGE.volumes()
         }
     else:
         volumes_snapshots = {volume: volume.snapshots}
