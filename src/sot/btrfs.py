@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import btrfsutil
-import json
+import sqlite3
 
 from sot.utils import ensure_path, escape, unescape
 
@@ -55,84 +55,107 @@ class SnapshotStorage:
             root = ensure_path(root).resolve()
         self.root = root
         self.path = root / config.SNAPSHOT_DIR
-        self._json = self.path / "index.json"
-        # silly, but not as much as _ = self.metadata
-        self._metadata_cached = self._metadata
+        self._db = self.path / "index.db"
+        self._conn = sqlite3.connect(self._db)
+        self._create_tables()
 
-    def __div__(self, volume) -> Path:
-        return self.path / volume
+    def _create_tables(self):
+        with self._conn:
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS volumes (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT UNIQUE
+                )
+            """)
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS snapshots (
+                    id INTEGER PRIMARY KEY,
+                    volume_id INTEGER,
+                    name TEXT,
+                    time REAL,
+                    FOREIGN KEY (volume_id) REFERENCES volumes (id),
+                    UNIQUE (volume_id, name)
+                )
+            """)
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_volume_name ON volumes (name)")
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_volume_id ON snapshots (volume_id)")
 
-    @property
-    def _metadata(self) -> MetadataType:
-        """ """
-        if not self._json.exists():
-            self._metadata = {}
-        with self._json.open("r") as f:
-            md = json.load(f)
-        self._metadata_cached = md
-        return md
-
-    @_metadata.setter
-    def _metadata(self, md: MetadataType):
-        with self._json.open("w") as f:
-            json.dump(
-                {
-                    k: dict(sorted(v.items(), key=lambda x: -x[1]))
-                    for k, v in md.items()
-                },
-                f,
-            )
+    def _get_volume_id(self, volume_name: str) -> int:
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT id FROM volumes WHERE name = ?",
+                (volume_name,)
+            ).fetchone()
+            if row is None:
+                self._conn.execute(
+                    "INSERT INTO volumes (name) VALUES (?)",
+                    (volume_name,)
+                )
+                row = self._conn.execute(
+                    "SELECT id FROM volumes WHERE name = ?",
+                    (volume_name,)
+                ).fetchone()
+            return row[0]
 
     def unregister(self, obj: "Snapshot" | "Volume"):
         if isinstance(obj, Snapshot):
-            md = self._metadata
-            del md[obj.volume.name][obj.name]
-            self._metadata = md
-            self._metadata_cached = md
+            with self._conn:
+                volume_id = self._get_volume_id(obj.volume.name)
+                self._conn.execute(
+                    "DELETE FROM snapshots WHERE volume_id = ? AND name = ?",
+                    (volume_id, obj.name)
+                )
         elif isinstance(obj, Volume):
-            raise NotImplementedError
+            with self._conn:
+                volume_id = self._get_volume_id(obj.name)
+                self._conn.execute(
+                    "DELETE FROM snapshots WHERE volume_id = ?",
+                    (volume_id,)
+                )
+                self._conn.execute(
+                    "DELETE FROM volumes WHERE id = ?",
+                    (volume_id,)
+                )
 
     def register(self, obj: "Snapshot" | "Volume"):
         if isinstance(obj, Snapshot):
-            md = self._metadata
-            volume = obj.volume
-
-            if volume.name in md:
-                md[volume.name][obj.name] = obj.time
-            else:
-                md[volume.name] = {obj.name: obj.time}
-            self._metadata = md
-            self._metadata_cached = md
+            with self._conn:
+                volume_id = self._get_volume_id(obj.volume.name)
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO snapshots (volume_id, name, time) VALUES (?, ?, ?)",
+                    (volume_id, obj.name, obj.time)
+                )
         elif isinstance(obj, Volume):
-            raise NotImplementedError
+            self._get_volume_id(obj.name)
 
     def snapshots(self, volume: "Volume") -> dict[str, Snapshot]:
-        return {
-            name: Snapshot(volume, name, time)
-            for name, time in self._metadata_cached[volume.name].items()
-        }
+        volume_id = self._get_volume_id(volume.name)
+        with self._conn:
+            rows = self._conn.execute(
+                "SELECT name, time FROM snapshots WHERE volume_id = ?",
+                (volume_id,)
+            ).fetchall()
+        return {name: Snapshot(volume, name, time) for name, time in rows}
 
     def find_snapshot(self, snapshot) -> Snapshot:
-        try:
-            volume = self._metadata_cached[snapshot.volume.name]
-        except KeyError:
-            raise SubvolumeNotFound(snapshot.volume)
-        try:
-            snapshot.time = volume[snapshot.name]
-            return snapshot
-        except KeyError:
+        volume_id = self._get_volume_id(snapshot.volume.name)
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT time FROM snapshots WHERE volume_id = ? AND name = ?",
+                (volume_id, snapshot.name)
+            ).fetchone()
+        if row is None:
             raise SnapshotNotFound(snapshot)
-
-    def update(self, obj: "Snapshot" | "Volume") -> "Snapshot" | "Volume":
-        if isinstance(obj, Snapshot):
-            raise NotImplementedError
-        elif isinstance(obj, Volume):
-            raise NotImplementedError
+        snapshot.time = row[0]
+        return snapshot
 
     def iter(self):
-        for d in self.path.iterdir():
-            if d.is_dir():
-                yield d
+        with self._conn:
+            rows = self._conn.execute(
+                "SELECT name FROM volumes"
+            ).fetchall()
+        for row in rows:
+            yield Volume(name=row[0])
 
 
 class Volume:
