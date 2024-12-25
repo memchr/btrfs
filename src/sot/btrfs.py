@@ -7,7 +7,7 @@ import shutil
 import btrfsutil
 import sqlite3
 
-from sot.utils import ensure_path, escape
+from sot.utils import ensure_path, escape, unescape
 
 
 class config:
@@ -158,6 +158,36 @@ class SnapshotStorage:
             rows = self._conn.execute("SELECT id, path FROM volumes").fetchall()
         for id, path in rows:
             yield Volume(path=path, id=id)
+
+    def rebuild_database(self):
+        """Rebuild the database from .sot storage and recover creation times if possible."""
+
+        # drop existing tables and indexes
+        with self._conn:
+            self._conn.execute("DROP TABLE IF EXISTS volumes")
+            self._conn.execute("DROP TABLE IF EXISTS snapshots")
+            self._conn.execute("DROP INDEX IF EXISTS idx_volume_path")
+            self._conn.execute("DROP INDEX IF EXISTS idx_snapshot_volume_id")
+
+        self._create_tables()
+        for volume in self.volumes_from_filesystem():
+            self.register(volume)
+            for snapshot in self.snapshots_from_filesystem(volume):
+                self.register(snapshot)
+
+    def volumes_from_filesystem(self):
+        """Yield volumes found in the filesystem."""
+        for volume_path in self.path.iterdir():
+            if volume_path.is_dir():
+                yield Volume(path=unescape(volume_path.name))
+
+    def snapshots_from_filesystem(self, volume: Volume):
+        """Yield snapshots found in the filesystem for a given volume."""
+        for snapshot_path in volume.storage.iterdir():
+            if snapshot_path.is_dir():
+                snapshot = Snapshot(volume, snapshot_path.name)
+                snapshot.time = snapshot_path.stat().st_ctime
+                yield snapshot
 
     def __del__(self):
         self._conn.close()

@@ -172,6 +172,13 @@ def path(volume, snapshot: Snapshot):
     print(snapshot.path.resolve())
 
 
+@cli.command()
+def rebuild_db():
+    """Rebuild the database from .sot storage and recover creation times if possible."""
+    config.STORAGE.rebuild_database()
+    click.echo("Database rebuilt successfully.")
+
+
 def styled(obj: Snapshot | Volume) -> str:
     if isinstance(obj, Snapshot):
         return click.style(obj.name, fg="yellow")
