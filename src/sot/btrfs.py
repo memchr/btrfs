@@ -204,6 +204,11 @@ class SnapshotStorage:
         self._conn.close()
 
 
+class AlreadInHead(ValueError):
+    def __init__(self, volume) -> None:
+        super().__init__(f"Volume '{volume}' is already in HEAD.")
+
+
 class Volume:
     def __init__(self, path: Path = None, exists=False, id: int = None) -> None:
         """
@@ -227,6 +232,50 @@ class Volume:
     def remove_storage(self):
         self.storage.rmdir()
         STORAGE.unregister(self)
+
+    def switch(self, snapshot: Snapshot):
+        """Switch volume to snapshot.
+
+        if snapshot is None, switch to HEAD.
+        """
+        self.assert_is_volume()
+        self.assert_has_snapshots()
+
+        back_to_head = snapshot is None or snapshot.name == "HEAD"
+
+        if back_to_head:
+            # check if volume is already in HEAD
+            if "HEAD" not in self.snapshots:
+                raise AlreadInHead(self)
+        elif snapshot.name not in self.snapshots:
+            raise SnapshotNotFound(snapshot)
+
+        # volume doesn't exist, just load the snapshot
+        if not self.realpath.exists():
+            snapshot.load_to_path(self.realpath)
+            return snapshot
+
+        # volume path exist but is not a subvolume
+        if not btrfsutil.is_subvolume(str(self.realpath)):
+            raise NotASubvolume(self.realpath)
+
+        # save current volume state as HEAD if not already done
+        if "HEAD" not in self.snapshots:
+            head = Snapshot(self, "HEAD")
+            head.create()
+        else:
+            head = self.snapshots["HEAD"]
+
+        # delete current volume/dir if it exists
+        btrfsutil.delete_subvolume(str(self.realpath))
+
+        if back_to_head:
+            head.load_to_path(self.realpath)
+            head.delete()
+            return head
+        else:
+            snapshot.load_to_path(self.realpath)
+            return snapshot
 
     @property
     def snapshots(self) -> dict[str, "Snapshot"]:

@@ -228,6 +228,19 @@ def load(volume: Volume, snapshot: Snapshot, workdir: Path):
     )
 
 
+@cli.command()
+@args.volume(exists=False)
+@args.snapshot(required=False)
+def switch(volume: Volume, snapshot: Snapshot):
+    """Switch volume to snapshot.
+
+    This will save the current state of the volume as HEAD then switch to the snapshot.
+    If no snapshot is provided, the volume will be switched to HEAD.
+    """
+    snapshot = volume.switch(snapshot)
+    click.echo(f"Volume '{styled(volume)}' switched to snapshot '{styled(snapshot)}'")
+
+
 def styled(obj: Snapshot | Volume) -> str:
     if isinstance(obj, Snapshot):
         return click.style(obj.name, fg="yellow")
