@@ -184,19 +184,24 @@ class SnapshotStorage:
 
     def volumes(self):
         with self._conn:
-            rows = self._cur.execute("SELECT id, path FROM volumes ORDER BY path").fetchall()
+            rows = self._cur.execute(
+                "SELECT id, path FROM volumes ORDER BY path"
+            ).fetchall()
         for id, path in rows:
             yield Volume(path=path, id=id)
 
     def head(self, volume: Volume) -> Snapshot | None:
         self.load(volume)
         with self._conn:
-            row = self._cur.execute("""
+            row = self._cur.execute(
+                """
                 SELECT id, name, time, annotation, head_snapshot_id
                 FROM snapshots
                 JOIN volumes_head ON snapshots.id = head_snapshot_id
                 WHERE snapshots.volume_id = ?
-            """, (volume.id,)).fetchone()
+            """,
+                (volume.id,),
+            ).fetchone()
         if row is None:
             return None
         return Snapshot(
