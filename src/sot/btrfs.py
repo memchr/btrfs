@@ -282,8 +282,7 @@ class SnapshotStorage:
             if (root / config.SNAPSHOT_DIR).exists():
                 return root
             root = root.parent
-            if os.path.ismount(root):
-                raise NoStorageError
+        raise NoStorageError
 
     def __del__(self):
         try:
