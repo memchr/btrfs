@@ -105,7 +105,7 @@ def list_(volume: Volume, volume_only: bool):
             if snapshot.annotation is not None:
                 annotation = f"{" " * (PAD_SNAPSHOT_NAME - len(snapshot.name))}({snapshot.annotation})"
                 pad -= len(annotation)
-            click.echo(f"  {styled(snapshot)}{annotation}{" "*pad}{click.style(snapshot.strtime, fg='cyan')}")
+            click.echo(f"  {styled(snapshot)}{annotation}{" "*pad} {click.style(snapshot.strtime, fg='cyan')}")
 
 
 class _DateTime(click.DateTime):
