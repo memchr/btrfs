@@ -141,9 +141,6 @@ class SnapshotStorage:
 
     def register(self, obj: "Snapshot" | "Volume"):
         if isinstance(obj, Snapshot):
-            self.register(obj.volume)
-            self.load(obj.volume)
-
             with self._conn:
                 self._cur.execute(
                     "INSERT OR REPLACE INTO snapshots (volume_id, name, time, annotation) VALUES (?, ?, ?, ?)",
@@ -162,6 +159,8 @@ class SnapshotStorage:
                         "INSERT OR IGNORE INTO volumes_head (volume_id) VALUES (?)",
                         (obj.id,),
                     )
+                else:
+                    self.load(obj)
 
     def unregister(self, obj: "Snapshot" | "Volume"):
         if isinstance(obj, Snapshot):
@@ -266,6 +265,15 @@ class SnapshotStorage:
                 snapshot = Snapshot(volume, snapshot_path.name)
                 snapshot.time = snapshot_path.stat().st_ctime
                 yield snapshot
+    @staticmethod
+    def open(root: Path = None):
+        global STORAGE
+        STORAGE = SnapshotStorage(root)
+    
+    @staticmethod
+    def close():
+        global STORAGE
+        del STORAGE
 
     def __del__(self):
         self._cur.close()
@@ -298,7 +306,6 @@ class Volume:
 
     def switch(self, snapshot: Snapshot):
         """Switch volume to snapshot."""
-        self.assert_is_volume()
         self.assert_has_snapshots()
 
         if snapshot.name not in self.snapshots:
@@ -310,21 +317,32 @@ class Volume:
             return snapshot
 
         # volume path exist but is not a subvolume
-        if not btrfsutil.is_subvolume(str(self.realpath)):
-            raise NotASubvolume(self.realpath)
+        self.assert_is_volume()
 
         self.delete()
         snapshot.load_to_path(self.realpath)
 
         # set snapshot as head of the volume
-        STORAGE.set_head(self, snapshot)
+        self.head = snapshot
 
     def delete(self):
         btrfsutil.delete_subvolume(str(self.realpath))
 
     @property
+    def head(self) -> Snapshot | None:
+        return STORAGE.head(self)
+
+    @head.setter
+    def head(self, snapshot: Snapshot):
+        STORAGE.set_head(self, snapshot)
+
+    @property
     def snapshots(self) -> dict[str, "Snapshot"]:
         return STORAGE.snapshots(self)
+
+    @staticmethod
+    def all():
+        return STORAGE.volumes()
 
     def assert_is_volume(self):
         path = self.realpath
@@ -354,13 +372,14 @@ class Snapshot:
             while (volume.storage / (name := self.generate_name())).exists():
                 pass
 
+        self._name = name
+        self._annotation = annotation
+
         self.volume: Volume = volume
         self.path: Path
-        self._name = name
         self.path: Path = self.volume.storage / self.name
         self.time: float = time
         self.id: int | None = id
-        self.annotation: str | None = annotation
 
     @property
     def name(self) -> str:
@@ -382,6 +401,15 @@ class Snapshot:
         STORAGE.update(self)
 
     @property
+    def annotation(self) -> str:
+        return self._annotation
+    
+    @annotation.setter
+    def annotation(self, new_annotation: str):
+        self._annotation = new_annotation
+        STORAGE.update(self)
+
+    @property
     def readonly(self) -> bool:
         return btrfsutil.get_subvolume_read_only(self.path)
 
@@ -394,9 +422,10 @@ class Snapshot:
         btrfsutil.create_snapshot(
             str(self.volume.realpath), str(self.path), read_only=True
         )
+        STORAGE.register(self.volume)
         STORAGE.register(self)
         # set snapshot as head of the volume
-        STORAGE.set_head(self.volume, self)
+        self.volume.head = self
 
     def delete(self) -> None:
         path = str(self.path)
@@ -409,7 +438,7 @@ class Snapshot:
         btrfsutil.create_snapshot(str(self.path), str(workdir), read_only=False)
 
     def is_head(self) -> bool:
-        head = STORAGE.head(self.volume)
+        head = self.volume.head
         return head is not None and head.id == self.id
 
     @property
@@ -426,3 +455,6 @@ class Snapshot:
 
     def __repr__(self) -> str:
         return self.name
+
+def rebuild_database():
+    STORAGE.rebuild_database()

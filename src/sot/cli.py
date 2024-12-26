@@ -9,13 +9,12 @@ from btrfsutil import BtrfsUtilError
 import click
 import click.shell_completion
 
-from sot import btrfs
 from sot.btrfs import (
-    STORAGE,
     Snapshot,
     SnapshotExists,
     SnapshotStorage,
     Volume,
+    rebuild_database,
 )
 from sot import args
 from sot import utils
@@ -34,7 +33,7 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 )
 def cli(root: Path):
     """BTRFS snapshots management."""
-    btrfs.STORAGE = SnapshotStorage(root)
+    SnapshotStorage.open(root)
 
 
 @cli.command()
@@ -70,9 +69,8 @@ def create(
     if force and snapshot.name in volume.snapshots:
         volume.snapshots[snapshot.name].delete()
     if edit_annotation:
-        snapshot.annotation = utils.edit_annotation(annotation)
-    else:
-        snapshot.annotation = annotation
+        annotation = utils.edit_annotation(annotation)
+    snapshot._annotation = annotation
     snapshot.create()
     click.echo(
         f"Snapshot '{click.style(volume.name, fg='green', bold=True)}/{click.style(snapshot.name, fg='blue')}' created"
@@ -88,13 +86,13 @@ def list_(volume: Volume, volume_only: bool):
 
     if volume_only:
         click.echo("Listing all volumes...")
-        for v in btrfs.STORAGE.volumes():
-            head = f"  {styled(btrfs.STORAGE.head(v))}"
+        for v in Volume.all():
+            head = f"  {styled(v.head)}"
             click.echo(f"{styled(v)}{head}")
         return
     elif volume is None:
         click.echo("Listing all snapshots...")
-        volumes_snapshots = {v: v.snapshots for v in btrfs.STORAGE.volumes()}
+        volumes_snapshots = {v: v.snapshots for v in Volume.all()}
     else:
         volumes_snapshots = {volume: volume.snapshots}
 
@@ -200,7 +198,7 @@ def path(volume, snapshot: Snapshot):
 @cli.command()
 def rebuild_db():
     """Rebuild the database from .sot storage and recover creation times if possible."""
-    btrfs.STORAGE.rebuild_database()
+    rebuild_database()
     click.echo("Database rebuilt successfully.")
 
 
@@ -213,7 +211,6 @@ def annotate(volume: Volume, snapshot: Snapshot, new_annotation: str):
     if new_annotation is None:
         new_annotation = utils.edit_annotation(snapshot.annotation)
     snapshot.annotation = new_annotation
-    btrfs.STORAGE.update(snapshot)
     click.echo(f"Snapshot '{styled(snapshot)}' annotated with: {new_annotation}")
 
 
@@ -264,8 +261,8 @@ def main():
     # Workaround: click doesn't call cli() in completion mode, so we need to set
     # btrfs.STORAGE here
     if "_SOT_COMPLETE" in os.environ:
-        btrfs.STORAGE = SnapshotStorage()
+        SnapshotStorage.open()
     try:
         cli()
     finally:
-        del btrfs.STORAGE
+        SnapshotStorage.close()
