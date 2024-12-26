@@ -297,10 +297,12 @@ class Volume:
         """
         Arguments:
             id {int} -- Volume ID in the database
-            path {Path} -- Path to the volume, relative to the storage root
+            path {Path} -- Path to the volume. Absolute, or relative to the storage root
             exists {bool} -- Check if the volume exists
         """
         self.path: Path = ensure_path(path)
+        if self.path.is_absolute():
+            self.path = self.path.relative_to(STORAGE.root)
         self.id: int | None = id
         # escape volume name
         self.name: str = escape(self.path)
@@ -388,7 +390,6 @@ class Snapshot:
         self._annotation = annotation
 
         self.volume: Volume = volume
-        self.path: Path
         self.path: Path = self.volume.storage / self.name
         self.time: float = time
         self.id: int | None = id

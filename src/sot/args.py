@@ -3,6 +3,7 @@ from typing import Any, List
 import click
 
 from sot import btrfs
+from sot.utils import ensure_path
 
 
 class Volume(click.ParamType):
@@ -19,7 +20,10 @@ class Volume(click.ParamType):
         if isinstance(value, btrfs.Volume):
             return value
         try:
-            volume = btrfs.Volume(value, exists=self.exists)
+            path = ensure_path(value)
+            if path.exists() and path.is_dir():
+                path = path.resolve()
+            volume = btrfs.Volume(path, exists=self.exists)
             if self.has_snapshots:
                 volume.assert_has_snapshots()
             return volume
