@@ -387,7 +387,8 @@ class Snapshot:
         btrfsutil.create_snapshot(str(self.path), str(workdir), read_only=False)
 
     def is_head(self) -> bool:
-        return STORAGE.head(self.volume).id == self.id
+        head = STORAGE.head(self.volume)
+        return head is not None and head.id == self.id
 
     @property
     def strtime(self):

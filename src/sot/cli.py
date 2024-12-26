@@ -248,6 +248,8 @@ def rm(volume: Volume):
 
 
 def styled(obj: Snapshot | Volume) -> str:
+    if obj is None:
+        return ""
     if isinstance(obj, Snapshot):
         if obj.is_head():
             bold = True
