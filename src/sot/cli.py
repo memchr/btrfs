@@ -9,7 +9,9 @@ from btrfsutil import BtrfsUtilError
 import click
 import click.shell_completion
 
+from sot import config
 from sot.btrfs import (
+    NoStorageError,
     Snapshot,
     SnapshotExists,
     SnapshotStorage,
@@ -31,15 +33,43 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="btrfs root",
 )
-def cli(root: Path):
-    """BTRFS snapshots management."""
-    SnapshotStorage.open(root)
+@click.pass_context
+def cli(ctx: click.Context, root: Path):
+    """Snapshot on top"""
+    if ctx.invoked_subcommand not in ("init",):
+        SnapshotStorage.open(root)
+    ctx.ensure_object(dict)
+    ctx.obj["root"] = root
 
 
 @cli.command()
-def init():
+@click.option("-f", "--force", is_flag=True, help="Force rebuild metadata")
+@click.pass_context
+def init(ctx: click.Context, force: bool):
     """Initialize snapshot storage"""
+    if force:
+        SnapshotStorage.open(ctx.obj["root"])
+        rebuild_metadata()
+        click.echo("Metadata rebuilt")
+        return
 
+    root = ctx.obj["root"]
+    if root is None:
+        try:
+            root = SnapshotStorage.find_storage()
+            raise click.UsageError(
+                f"Storage found at '{root}', use -f to rebuild metadata"
+            )
+        except NoStorageError:
+            root = Path.cwd()
+
+    storage_dir = root / config.SNAPSHOT_DIR
+    if storage_dir.exists():
+        raise click.UsageError(f"Storage found at '{root}', use -f to rebuild metadata")
+
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    SnapshotStorage.open(root)
+    click.echo(f"Storage initialized at '{root}'")
 
 
 @cli.command()
@@ -106,7 +136,9 @@ def list_(volume: Volume, volume_only: bool):
             if snapshot.annotation is not None:
                 annotation = f"{" " * (PAD_SNAPSHOT_NAME - len(snapshot.name))}({snapshot.annotation})"
                 pad -= len(annotation)
-            click.echo(f"  {styled(snapshot)}{annotation}{" "*pad} {click.style(snapshot.strtime, fg='cyan')}")
+            click.echo(
+                f"  {styled(snapshot)}{annotation}{" "*pad} {click.style(snapshot.strtime, fg='cyan')}"
+            )
 
 
 class _DateTime(click.DateTime):
@@ -197,13 +229,6 @@ def path(volume, snapshot: Snapshot):
 
 
 @cli.command()
-def rebuild_db():
-    """Rebuild the database from .sot storage and recover creation times if possible."""
-    rebuild_metadata()
-    click.echo("Database rebuilt successfully.")
-
-
-@cli.command()
 @args.volume(exists=False)
 @args.snapshot()
 @click.argument("new_annotation", required=False, type=str)
@@ -265,5 +290,7 @@ def main():
         SnapshotStorage.open()
     try:
         cli()
+    except NoStorageError:
+        click.echo("No storage found. Run 'sot init' to initialize storage.")
     finally:
         SnapshotStorage.close()

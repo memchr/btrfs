@@ -39,14 +39,14 @@ class NoSnapshotsError(FileNotFoundError):
         super().__init__(f"Subvolume '{volume}' does not have snapshots.")
 
 
+class NoStorageError(FileNotFoundError):
+    pass
+
+
 class SnapshotStorage:
     def __init__(self, root: Path | None = None) -> None:
         if root is None:
-            root = Path.cwd()
-            while True:
-                if (root / ".sot").is_dir():
-                    break
-                root = root.parent
+            root = self.find_storage()
         else:
             root = ensure_path(root).resolve()
         self.root: Path = root
@@ -274,9 +274,23 @@ class SnapshotStorage:
         global STORAGE
         del STORAGE
 
+    @staticmethod
+    def find_storage() -> Path | None:
+        # locate SNAPSHOT_DIR from cwd
+        root = Path.cwd()
+        while root != Path("/"):
+            if (root / config.SNAPSHOT_DIR).exists():
+                return root
+            root = root.parent
+            if os.path.ismount(root):
+                raise NoStorageError
+
     def __del__(self):
-        self._cur.close()
-        self._conn.close()
+        try:
+            self._cur.close()
+            self._conn.close()
+        except Exception:
+            pass
 
 
 class Volume:
