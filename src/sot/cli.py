@@ -18,6 +18,7 @@ from sot.btrfs import (
 )
 from sot import args
 from sot import utils
+from sot.config import MAX_COLUMNS, PAD_SNAPSHOT_NAME
 
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
@@ -87,7 +88,8 @@ def list_(volume: Volume, volume_only: bool):
     if volume_only:
         click.echo("Listing all volumes...")
         for v in btrfs.STORAGE.volumes():
-            click.echo(styled(v))
+            head = f"  {styled(btrfs.STORAGE.head(v))}"
+            click.echo(f"{styled(v)}{head}")
         return
     elif volume is None:
         click.echo("Listing all snapshots...")
@@ -95,15 +97,16 @@ def list_(volume: Volume, volume_only: bool):
     else:
         volumes_snapshots = {volume: volume.snapshots}
 
-    leftpad = min(shutil.get_terminal_size().columns - 16, 60)
+    maxpad = min(shutil.get_terminal_size().columns - 24, MAX_COLUMNS)
     for volume, snapshots in volumes_snapshots.items():
         click.echo(styled(volume))
         for snapshot in snapshots.values():
+            pad = maxpad - len(snapshot.name)
+            annotation = ""
             if snapshot.annotation is not None:
-                buf = f"{styled(snapshot):<18} ({snapshot.annotation})"
-            else:
-                buf = f"{styled(snapshot)}"
-            click.echo(f"  {buf:<{leftpad}} {click.style(snapshot.strtime, fg='cyan')}")
+                annotation = f"{" " * (PAD_SNAPSHOT_NAME - len(snapshot.name))}({snapshot.annotation})"
+                pad -= len(annotation)
+            click.echo(f"  {styled(snapshot)}{annotation}{" "*pad}{click.style(snapshot.strtime, fg='cyan')}")
 
 
 class _DateTime(click.DateTime):
@@ -236,6 +239,7 @@ def switch(volume: Volume, snapshot: Snapshot):
     volume.switch(snapshot)
     click.echo(f"Volume '{styled(volume)}' switched to snapshot '{styled(snapshot)}'")
 
+
 @cli.command()
 @args.volume(exists=True)
 def rm(volume: Volume):
@@ -245,7 +249,11 @@ def rm(volume: Volume):
 
 def styled(obj: Snapshot | Volume) -> str:
     if isinstance(obj, Snapshot):
-        return click.style(obj.name, fg="yellow")
+        if obj.is_head():
+            bold = True
+        else:
+            bold = False
+        return click.style(obj.name, fg="yellow", bold=bold)
     elif isinstance(obj, Volume):
         return click.style(obj.path, fg="green", bold=True)
 

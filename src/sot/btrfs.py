@@ -3,7 +3,6 @@ from datetime import datetime
 import hashlib
 import os
 from pathlib import Path
-from re import S
 import shutil
 import btrfsutil
 import sqlite3
@@ -84,6 +83,15 @@ class SnapshotStorage:
                     UNIQUE (volume_id, name)
                 )
             """)
+            # Stores the "HEAD" of the volume, i.e. the last check-out snapshot, if there is one.
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS volumes_head (
+                    volume_id INTEGER PRIMARY KEY,
+                    head_snapshot_id INTEGER,
+                    FOREIGN KEY (volume_id) REFERENCES volumes (id) ON DELETE CASCADE,
+                    FOREIGN KEY (head_snapshot_id) REFERENCES snapshots (id) ON DELETE SET NULL
+                )
+            """)
             self._cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_volume_path ON volumes (path)"
             )
@@ -126,11 +134,19 @@ class SnapshotStorage:
                     "INSERT OR REPLACE INTO snapshots (volume_id, name, time, annotation) VALUES (?, ?, ?, ?)",
                     (obj.volume.id, obj.name, obj.time, obj.annotation),
                 )
+                if self._cur.rowcount > 0:
+                    obj.id = self._cur.lastrowid
         elif isinstance(obj, Volume):
             with self._conn:
                 self._cur.execute(
                     "INSERT OR IGNORE INTO volumes (path) VALUES (?)", (str(obj.path),)
                 )
+                if self._cur.rowcount > 0:
+                    obj.id = self._cur.lastrowid
+                    self._cur.execute(
+                        "INSERT OR IGNORE INTO volumes_head (volume_id) VALUES (?)",
+                        (obj.id,),
+                    )
 
     def unregister(self, obj: "Snapshot" | "Volume"):
         if isinstance(obj, Snapshot):
@@ -172,6 +188,34 @@ class SnapshotStorage:
         for id, path in rows:
             yield Volume(path=path, id=id)
 
+    def head(self, volume: Volume) -> Snapshot | None:
+        self.load(volume)
+        with self._conn:
+            row = self._cur.execute("""
+                SELECT id, name, time, annotation, head_snapshot_id
+                FROM snapshots
+                JOIN volumes_head ON snapshots.id = head_snapshot_id
+                WHERE snapshots.volume_id = ?
+            """, (volume.id,)).fetchone()
+        if row is None:
+            return None
+        return Snapshot(
+            volume=volume,
+            id=row["id"],
+            name=row["name"],
+            time=row["time"],
+            annotation=row["annotation"],
+        )
+
+    def set_head(self, volume: Volume, snapshot: Snapshot):
+        self.load(volume)
+        self.load(snapshot)
+        with self._conn:
+            self._cur.execute(
+                "UPDATE volumes_head SET head_snapshot_id = ? WHERE volume_id = ?",
+                (snapshot.id, volume.id),
+            )
+
     def rebuild_database(self):
         """Rebuild the database from .sot storage and recover creation times if possible."""
 
@@ -179,6 +223,7 @@ class SnapshotStorage:
         with self._conn:
             self._cur.execute("DROP TABLE IF EXISTS volumes")
             self._cur.execute("DROP TABLE IF EXISTS snapshots")
+            self._cur.execute("DROP TABLE IF EXISTS volumes_head")
             self._cur.execute("DROP INDEX IF EXISTS idx_volume_path")
             self._cur.execute("DROP INDEX IF EXISTS idx_snapshot_volume_id")
 
@@ -248,10 +293,11 @@ class Volume:
         if not btrfsutil.is_subvolume(str(self.realpath)):
             raise NotASubvolume(self.realpath)
 
-        # delete current volume/dir if it exists
         self.delete()
-
         snapshot.load_to_path(self.realpath)
+
+        # set snapshot as head of the volume
+        STORAGE.set_head(self, snapshot)
 
     def delete(self):
         btrfsutil.delete_subvolume(str(self.realpath))
@@ -327,6 +373,8 @@ class Snapshot:
             str(self.volume.realpath), str(self.path), read_only=True
         )
         STORAGE.register(self)
+        # set snapshot as head of the volume
+        STORAGE.set_head(self.volume, self)
 
     def delete(self) -> None:
         path = str(self.path)
@@ -337,6 +385,9 @@ class Snapshot:
     def load_to_path(self, workdir: Path):
         """Create a read-write snapshot of snapshot to workdir."""
         btrfsutil.create_snapshot(str(self.path), str(workdir), read_only=False)
+
+    def is_head(self) -> bool:
+        return STORAGE.head(self.volume).id == self.id
 
     @property
     def strtime(self):
