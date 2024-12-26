@@ -232,12 +232,8 @@ def load(volume: Volume, snapshot: Snapshot, workdir: Path):
 @args.volume(exists=False)
 @args.snapshot(required=False)
 def switch(volume: Volume, snapshot: Snapshot):
-    """Switch volume to snapshot.
-
-    This will save the current state of the volume as HEAD then switch to the snapshot.
-    If no snapshot is provided, the volume will be switched to HEAD.
-    """
-    snapshot = volume.switch(snapshot)
+    """Switch volume to snapshot."""
+    volume.switch(snapshot)
     click.echo(f"Volume '{styled(volume)}' switched to snapshot '{styled(snapshot)}'")
 
 @cli.command()
