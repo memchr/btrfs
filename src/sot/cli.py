@@ -212,8 +212,7 @@ def annotate(volume: Volume, snapshot: Snapshot, new_annotation: str):
     if new_annotation is None:
         new_annotation = utils.edit_annotation(snapshot.annotation)
     snapshot.annotation = new_annotation
-    btrfs.STORAGE.unregister(snapshot)
-    btrfs.STORAGE.register(snapshot)
+    btrfs.STORAGE.update(snapshot)
     click.echo(f"Snapshot '{styled(snapshot)}' annotated with: {new_annotation}")
 
 

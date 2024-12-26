@@ -124,6 +124,21 @@ class SnapshotStorage:
                 obj.id = row["id"]
                 obj.annotation = row["annotation"]
 
+    def update(self, obj: "Snapshot" | "Volume"):
+        if isinstance(obj, Snapshot):
+            self.load(obj)
+            with self._conn:
+                self._cur.execute(
+                    "UPDATE snapshots SET name = ?, time = ?, annotation = ? WHERE id = ?",
+                    (obj.name, obj.time, obj.annotation, obj.id),
+                )
+        elif isinstance(obj, Volume):
+            self.load(obj)
+            with self._conn:
+                self._cur.execute(
+                    "UPDATE volumes SET path = ? WHERE id = ?", (str(obj.path), obj.id)
+                )
+
     def register(self, obj: "Snapshot" | "Volume"):
         if isinstance(obj, Snapshot):
             self.register(obj.volume)
@@ -355,14 +370,16 @@ class Snapshot:
     def name(self, new_name):
         if new_name in self.volume.snapshots:
             raise SnapshotExists(new_name)
-
-        STORAGE.unregister(self)
-        self._name = new_name
         self.readonly = False
+
+        self._name = new_name
         old_path = self.path
         self.path = self.volume.storage / self._name
         shutil.move(old_path, self.path)
-        STORAGE.register(self)
+
+        self.readonly = True
+
+        STORAGE.update(self)
 
     @property
     def readonly(self) -> bool:
