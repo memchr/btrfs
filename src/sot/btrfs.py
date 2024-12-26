@@ -184,7 +184,7 @@ class SnapshotStorage:
 
     def volumes(self):
         with self._conn:
-            rows = self._cur.execute("SELECT id, path FROM volumes").fetchall()
+            rows = self._cur.execute("SELECT id, path FROM volumes ORDER BY path").fetchall()
         for id, path in rows:
             yield Volume(path=path, id=id)
 
