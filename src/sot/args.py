@@ -76,6 +76,7 @@ class Snapshot(click.ParamType):
             btrfs.SnapshotExists,
             btrfs.SubvolumeNotFound,
             btrfs.SnapshotNotFound,
+            btrfs.NoSnapshotsError,
         ) as e:
             self.fail(e, param, ctx)
 
@@ -85,7 +86,6 @@ class Snapshot(click.ParamType):
         from click.shell_completion import CompletionItem
 
         volume: btrfs.Volume = ctx.params["volume"]
-
         return [CompletionItem(n) for n in volume.snapshots.keys()]
 
 

@@ -117,7 +117,7 @@ class _DateTime(click.DateTime):
 
 
 @cli.command()
-@args.volume(exists=False)
+@args.volume(exists=False, has_snapshots=True)
 @args.snapshot()
 @click.argument("name", type=click.STRING)
 def rename(volume: Volume, snapshot: Snapshot, name: str):
@@ -229,7 +229,7 @@ def load(volume: Volume, snapshot: Snapshot, workdir: Path):
 
 
 @cli.command()
-@args.volume(exists=False)
+@args.volume(exists=False, has_snapshots=True)
 @args.snapshot(required=False)
 def switch(volume: Volume, snapshot: Snapshot):
     """Switch volume to snapshot."""
