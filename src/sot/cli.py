@@ -14,7 +14,7 @@ from sot.btrfs import (
     SnapshotExists,
     SnapshotStorage,
     Volume,
-    rebuild_database,
+    rebuild_metadata,
 )
 from sot import args
 from sot import utils
@@ -39,6 +39,7 @@ def cli(root: Path):
 @cli.command()
 def init():
     """Initialize snapshot storage"""
+
 
 
 @cli.command()
@@ -198,7 +199,7 @@ def path(volume, snapshot: Snapshot):
 @cli.command()
 def rebuild_db():
     """Rebuild the database from .sot storage and recover creation times if possible."""
-    rebuild_database()
+    rebuild_metadata()
     click.echo("Database rebuilt successfully.")
 
 

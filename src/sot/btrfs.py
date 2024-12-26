@@ -40,8 +40,6 @@ class NoSnapshotsError(FileNotFoundError):
 
 
 class SnapshotStorage:
-    MetadataType = dict[str, dict[str, float]]
-
     def __init__(self, root: Path | None = None) -> None:
         if root is None:
             root = Path.cwd()
@@ -235,7 +233,7 @@ class SnapshotStorage:
                 (snapshot.id, volume.id),
             )
 
-    def rebuild_database(self):
+    def rebuild_metadata(self):
         """Rebuild the database from .sot storage and recover creation times if possible."""
 
         # drop existing tables and indexes
@@ -265,11 +263,12 @@ class SnapshotStorage:
                 snapshot = Snapshot(volume, snapshot_path.name)
                 snapshot.time = snapshot_path.stat().st_ctime
                 yield snapshot
+
     @staticmethod
     def open(root: Path = None):
         global STORAGE
         STORAGE = SnapshotStorage(root)
-    
+
     @staticmethod
     def close():
         global STORAGE
@@ -403,7 +402,7 @@ class Snapshot:
     @property
     def annotation(self) -> str:
         return self._annotation
-    
+
     @annotation.setter
     def annotation(self, new_annotation: str):
         self._annotation = new_annotation
@@ -456,5 +455,6 @@ class Snapshot:
     def __repr__(self) -> str:
         return self.name
 
-def rebuild_database():
-    STORAGE.rebuild_database()
+
+def rebuild_metadata():
+    STORAGE.rebuild_metadata()
