@@ -11,6 +11,7 @@ import click.shell_completion
 
 from sot import btrfs
 from sot.btrfs import (
+    STORAGE,
     Snapshot,
     SnapshotExists,
     SnapshotStorage,
