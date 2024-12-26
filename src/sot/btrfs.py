@@ -168,7 +168,7 @@ class SnapshotStorage:
         self.load(volume)
         with self._conn:
             rows = self._cur.execute(
-                "SELECT id, name, time, annotation FROM snapshots WHERE volume_id = ?",
+                "SELECT id, name, time, annotation FROM snapshots WHERE volume_id = ? ORDER BY time DESC",
                 (volume.id,),
             ).fetchall()
         return {
