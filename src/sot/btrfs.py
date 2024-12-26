@@ -57,22 +57,23 @@ class SnapshotStorage:
         self._db = self.path / "index.db"
         self._conn = sqlite3.connect(self._db)
         self._conn.row_factory = sqlite3.Row
+        self._cur = self._conn.cursor()
         self._init_db()
 
     def _init_db(self):
         with self._conn:
-            self._conn.execute("PRAGMA foreign_keys = ON")
+            self._cur.execute("PRAGMA foreign_keys = ON")
         self._create_tables()
 
     def _create_tables(self):
         with self._conn:
-            self._conn.execute("""
+            self._cur.execute("""
                 CREATE TABLE IF NOT EXISTS volumes (
                     id INTEGER PRIMARY KEY,
                     path TEXT UNIQUE
                 )
             """)
-            self._conn.execute("""
+            self._cur.execute("""
                 CREATE TABLE IF NOT EXISTS snapshots (
                     id INTEGER PRIMARY KEY,
                     volume_id INTEGER NOT NULL,
@@ -83,10 +84,10 @@ class SnapshotStorage:
                     UNIQUE (volume_id, name)
                 )
             """)
-            self._conn.execute(
+            self._cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_volume_path ON volumes (path)"
             )
-            self._conn.execute(
+            self._cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_snapshot_volume_id ON snapshots (volume_id)"
             )
 
@@ -97,7 +98,7 @@ class SnapshotStorage:
 
         if isinstance(obj, Volume):
             with self._conn:
-                row = self._conn.execute(
+                row = self._cur.execute(
                     "SELECT id FROM volumes WHERE path = ?", (str(obj.path),)
                 ).fetchone()
                 if row is not None:
@@ -105,7 +106,7 @@ class SnapshotStorage:
         if isinstance(obj, Snapshot):
             self.load(obj.volume)
             with self._conn:
-                row = self._conn.execute(
+                row = self._cur.execute(
                     "SELECT id, time, annotation FROM snapshots WHERE volume_id = ? AND name = ?",
                     (obj.volume.id, obj.name),
                 ).fetchone()
@@ -121,13 +122,13 @@ class SnapshotStorage:
             self.load(obj.volume)
 
             with self._conn:
-                self._conn.execute(
+                self._cur.execute(
                     "INSERT OR REPLACE INTO snapshots (volume_id, name, time, annotation) VALUES (?, ?, ?, ?)",
                     (obj.volume.id, obj.name, obj.time, obj.annotation),
                 )
         elif isinstance(obj, Volume):
             with self._conn:
-                self._conn.execute(
+                self._cur.execute(
                     "INSERT OR IGNORE INTO volumes (path) VALUES (?)", (str(obj.path),)
                 )
 
@@ -136,7 +137,7 @@ class SnapshotStorage:
             self.load(obj.volume)
 
             with self._conn:
-                self._conn.execute(
+                self._cur.execute(
                     "DELETE FROM snapshots WHERE volume_id = ? AND (name = ? OR id = ?)",
                     (obj.volume.id, obj.name, obj.id),
                 )
@@ -145,12 +146,12 @@ class SnapshotStorage:
                 if obj.id is None:
                     return
 
-                self._conn.execute("DELETE FROM volumes WHERE id = ?", (obj.id,))
+                self._cur.execute("DELETE FROM volumes WHERE id = ?", (obj.id,))
 
     def snapshots(self, volume: "Volume") -> dict[str, Snapshot]:
         self.load(volume)
         with self._conn:
-            rows = self._conn.execute(
+            rows = self._cur.execute(
                 "SELECT id, name, time, annotation FROM snapshots WHERE volume_id = ?",
                 (volume.id,),
             ).fetchall()
@@ -167,7 +168,7 @@ class SnapshotStorage:
 
     def volumes(self):
         with self._conn:
-            rows = self._conn.execute("SELECT id, path FROM volumes").fetchall()
+            rows = self._cur.execute("SELECT id, path FROM volumes").fetchall()
         for id, path in rows:
             yield Volume(path=path, id=id)
 
@@ -176,10 +177,10 @@ class SnapshotStorage:
 
         # drop existing tables and indexes
         with self._conn:
-            self._conn.execute("DROP TABLE IF EXISTS volumes")
-            self._conn.execute("DROP TABLE IF EXISTS snapshots")
-            self._conn.execute("DROP INDEX IF EXISTS idx_volume_path")
-            self._conn.execute("DROP INDEX IF EXISTS idx_snapshot_volume_id")
+            self._cur.execute("DROP TABLE IF EXISTS volumes")
+            self._cur.execute("DROP TABLE IF EXISTS snapshots")
+            self._cur.execute("DROP INDEX IF EXISTS idx_volume_path")
+            self._cur.execute("DROP INDEX IF EXISTS idx_snapshot_volume_id")
 
         self._create_tables()
         for volume in self.volumes_from_filesystem():
@@ -202,6 +203,7 @@ class SnapshotStorage:
                 yield snapshot
 
     def __del__(self):
+        self._cur.close()
         self._conn.close()
 
 
