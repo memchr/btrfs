@@ -1,5 +1,3 @@
-# memchr's btrfs scripts
+# sot
 
-## snapshot.py
-
-Tool for managing read-only btrfs snapshots
+btrfs snapshot tool
