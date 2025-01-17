@@ -186,9 +186,9 @@ def delete(
     """Delete snapshots."""
     if len(snapshots) == 0:
         if all:
-            snapshots = volume.snapshots.values()
+            snapshots = list(volume.snapshots.values())
         elif keep is not None:
-            snapshots = volume.snapshots.values()[:-keep]
+            snapshots = list(volume.snapshots.values())[keep:]
         elif before is not None:
             snapshots = [
                 s for s in volume.snapshots.values() if s.time < before.timestamp()
